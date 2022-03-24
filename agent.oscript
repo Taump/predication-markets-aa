@@ -1,0 +1,382 @@
+{
+	bounce_fees: { base: 10000 },
+	getters: `{
+		$get_reserve = ($yes_amount, $no_amount, $draw_amount) => {
+			$r = ceil(sqrt($yes_amount^2 + $no_amount^2 + $draw_amount^2));
+			$r
+		};
+
+		$get_exchange_result = ($yes_amount, $no_amount, $draw_amount) => {
+			$supply_yes = var["supply_yes"] OTHERWISE 0;
+			$supply_no = var["supply_no"] OTHERWISE 0;
+			$supply_draw = var["supply_draw"] OTHERWISE 0;
+			$current_reserve = var["reserve"] OTHERWISE 0;
+
+			$new_supply_yes = $supply_yes + ($yes_amount ? $yes_amount : 0);
+			$new_supply_no = $supply_no + ($no_amount ? $no_amount : 0);
+			$new_supply_draw = $supply_draw + ($draw_amount ? $draw_amount : 0);
+
+			$new_reserve = $get_reserve($new_supply_yes, $new_supply_no, $new_supply_draw);
+
+			$reserve_delta = $current_reserve - $new_reserve;
+
+			require($new_supply_yes >= 0 AND $new_supply_no >= 0 AND $new_supply_draw >= 0, "too much redeem?");
+			require(params.allow_draw OR $draw_amount == 0, "draw_asset isn't exist");
+
+			{
+				reserve_delta: $reserve_delta,
+				reserve_needed: $reserve_delta < 0 ? abs($reserve_delta) : 0,
+				payout: $reserve_delta > 0 ? $reserve_delta : 0,
+				new_reserve: $new_reserve
+			}
+		};
+	}`,
+	init: `{
+		// params
+		$event = params.event OTHERWISE '';
+		require(length($event) >= 3 AND length($event) <= 128, "additional description cannot be over 128 chars");
+
+		$oracle = params.oracle OTHERWISE 'F4KHJUCLJKY4JV7M5F754LAJX4EB7M4N'; // for testnet
+		require($oracle AND is_valid_address($oracle), "oracle isn't valid");
+
+		$comparison = params.comparison OTHERWISE "==";
+		require($comparison == "==" OR $comparison == ">" OR $comparison == ">=" OR $comparison == "<" OR $comparison == "<=" OR $comparison == "!=", "operation is unknown");
+
+		$feed_name = params.feed_name OTHERWISE '';
+		require(length($feed_name) > 0 AND $feed_name != "none", "feed_name isn't valid");
+
+		$reserve_asset = params.reserve_asset OTHERWISE 'base';
+		require(asset[$reserve_asset].exists, "no such asset: " || $reserve_asset);
+
+		$allow_draw = params.allow_draw OTHERWISE false;
+		require($allow_draw == false OR $allow_draw == true, "allow_draw must be bool");
+
+		$datafeed_draw_value = params.datafeed_draw_value OTHERWISE 'none';
+		$datafeed_value = params.datafeed_value;
+
+		require(exists($datafeed_value), "datafeed_value does not exist");
+
+		$start_of_trading_period = params.start_of_trading_period OTHERWISE 0;
+		require(is_integer($start_of_trading_period) AND $start_of_trading_period > 0, "start_of_trading_period must be integer");
+		
+		$trading_period_length = params.trading_period_length OTHERWISE 30 * 24 * 3600;
+		require(is_integer($trading_period_length) AND $trading_period_length >= 24 * 3600, "trading period must be longer than a day");
+
+		$waiting_period_length = params.waiting_period_length OTHERWISE 24 * 3600;
+		require(is_integer($waiting_period_length) AND $waiting_period_length >= 0, "trading period must be longer than a day");
+
+		// helpers
+		$ready = var['yes_asset'] AND var['no_asset'] AND (var['draw_asset'] OR !$allow_draw);
+
+		$result = var['result']; // yes/no/draw
+
+		$yes_asset = var['yes_asset'];
+		$no_asset = var['no_asset'];
+		$draw_asset = var['draw_asset'];
+
+		$end_of_trading_period = $start_of_trading_period + $trading_period_length;
+		$end_of_waiting_period = $end_of_trading_period + $waiting_period_length;
+
+		$network_fee = ($reserve_asset == 'base') ? 10000 : 0;
+		$aa2aa_bytes = 2000;
+		
+		$reserve_amount	= trigger.output[[asset=$reserve_asset]];
+	}`,
+	messages: {
+		cases: [
+			{ // define assets
+				if: `{!$ready AND trigger.data.define}`,
+				init: `{
+					$define_type = $yes_asset ? ($no_asset ? "draw_asset" : "no_asset") : "yes_asset";
+					$define_asset_forwarder = 'E4BAASPOCW6WHXSUOY2XEKXKA42RRD5I';
+					require(($define_type == 'draw_asset' AND $allow_draw) OR $define_type == 'no_asset' OR $define_type == 'yes_asset', "unknown define type");
+					require(!var[$define_type], "asset already defined");
+					
+				}`,
+				messages: [
+					{
+						app: 'asset',
+						payload: {
+							// without cap
+							is_private: false,
+							is_transferrable: true,
+							auto_destroy: false,
+							fixed_denominations: false,
+							issued_by_definer_only: true,
+							cosigned_by_definer: false,
+							spender_attested: false,
+						}
+					},
+					{ // define the second asset through a forwarder
+						if: `{trigger.data.factory AND !$yes_asset}`,
+						app: 'data',
+						payload: {
+							factory: "{trigger.data.factory}",
+						}
+					},
+					{
+						if: `{trigger.data.factory AND !$yes_asset}`,
+						app: 'payment',
+						payload: {
+							asset: 'base',
+							outputs: [
+								{address: "{$define_asset_forwarder}", amount: 4000}
+							]
+						}
+					},
+					{ // call back to factory to record our newly defined assets
+						if: `{trigger.data.factory AND $yes_asset AND !$no_asset}`,
+						app: 'data',
+						payload: {
+							yes_asset: "{$yes_asset}",
+							allow_draw: "{params.allow_draw}"
+						}
+					},
+					{
+						if: `{trigger.data.factory AND $yes_asset AND !$no_asset}`,
+						app: 'payment',
+						payload: {
+							asset: 'base',
+							outputs: [
+								{address: '{trigger.data.factory}', amount: 4000}
+							]
+						}
+					},
+					{
+						if: `{trigger.data.factory AND $yes_asset AND $no_asset AND !$draw_asset AND $allow_draw}`,
+						app: 'data',
+						payload: {
+							no_asset: "{$no_asset}",
+						}
+					},
+						{
+						if: `{trigger.data.factory AND $yes_asset AND $no_asset AND !$draw_asset AND $allow_draw}`,
+						app: 'payment',
+						payload: {
+							asset: 'base',
+							outputs: [
+								{address: '{trigger.data.factory}', amount: 4000},
+							]
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							var[$define_type] = response_unit;
+							response[$define_type] = response_unit;
+						}`
+					},
+				]
+			},
+			{ // mint or redeem tokens
+				if: `{$ready AND !$result AND (((trigger.output[[asset=$reserve_asset]] > $network_fee) AND (trigger.data.yes_amount OR trigger.data.no_amount OR trigger.data.draw_amount)) OR trigger.output[[asset=$yes_asset]] > 0 OR trigger.output[[asset=$no_asset]] > 0 OR ($allow_draw AND trigger.output[[asset=$draw_asset]] > 0))}`,
+				init: `{
+					if (trigger.data.yes_to AND !is_valid_address(trigger.data.yes_to))
+						bounce("bad no_to address");
+					if (trigger.data.tokens2_to AND !is_valid_address(trigger.data.no_to))
+						bounce("bad no_to address");
+					if (trigger.data.reserve_to AND !is_valid_address(trigger.data.reserve_to))
+						bounce("bad reserve_to address");
+					if (trigger.data.draw_to AND !is_valid_address(trigger.data.draw_to))
+						bounce("bad draw_to address");
+					if (trigger.data.to AND !is_valid_address(trigger.data.to))
+						bounce("bad to address");
+
+					require(timestamp >= $start_of_trading_period, "trading period has not started");
+					require(timestamp <= $end_of_trading_period, "the trading period is already closed");
+
+					$yes_to = trigger.data.yes_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
+					$no_to = trigger.data.no_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
+					$draw_to = trigger.data.draw_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
+					$reserve_to = trigger.data.reserve_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
+
+					$yes_amount = trigger.data.yes_amount OTHERWISE -trigger.output[[asset=$yes_asset]];
+					$no_amount = trigger.data.no_amount OTHERWISE -trigger.output[[asset=$no_asset]];
+					$draw_amount = trigger.data.draw_amount OTHERWISE -trigger.output[[asset=$draw_asset]];	
+
+					if (trigger.data.yes_amount AND (!is_integer(trigger.data.yes_amount) OR trigger.data.yes_amount <= 0))
+						bounce("invalid number of yes_amount");
+					if (trigger.data.no_amount AND (!is_integer(trigger.data.no_amount) OR trigger.data.no_amount <= 0))
+						bounce("invalid number of no_amount");
+					if (trigger.data.draw_amount AND (!is_integer(trigger.data.draw_amount) OR trigger.data.draw_amount <= 0 OR !$allow_draw))
+						bounce("invalid number of draw_amount");
+
+					if (trigger.data.yes_amount AND trigger.output[[asset=$yes_asset]] > 0)
+						bounce("both yes_amount param and amount");
+					if (trigger.data.no_amount AND trigger.output[[asset=$no_asset]] > 0)
+						bounce("both no_amount param and amount");
+					if (trigger.data.draw_amount AND trigger.output[[asset=$draw_asset]] > 0)
+						bounce("both draw_amount param and amount");	
+
+					$reserve_count = trigger.output[[asset=$reserve_asset]] - $network_fee;
+					
+					$res = $get_exchange_result($yes_amount, $no_amount, $draw_amount);
+
+					$reserve_needed = $res.reserve_needed;
+					
+					$new_reserve = $res.new_reserve;
+
+					$payout = $res.payout + $reserve_count - $reserve_needed;
+
+					if ($reserve_needed > 0){
+						require($reserve_needed <= $reserve_count, "expected reserve amount: " || $reserve_needed);
+					}
+				}`,
+				messages: [
+					{
+						if: "{$yes_amount > 0}",
+						app: 'payment',
+						payload: {
+							asset: `{$yes_asset}`,
+							outputs: [
+								{address: "{$yes_to}", amount: "{ $yes_amount }"}
+							]
+						}
+					},
+					{
+						if: "{$no_amount > 0}",
+						app: 'payment',
+						payload: {
+							asset: `{$no_asset}`,
+							outputs: [
+								{address: "{$no_to}", amount: "{ $no_amount }"}
+							]
+						}
+					},
+					{
+						if: "{$draw_amount > 0}",
+						app: 'payment',
+						payload: {
+							asset: `{$draw_asset}`,
+							outputs: [
+								{address: "{$draw_to}", amount: "{ $draw_amount }"}
+							]
+						}
+					},				
+					{ // return the change (if any) or pay out the redeemed reserve
+						if: "{ $payout > 0 }",
+						app: 'payment',
+						payload: {
+							asset: `{$reserve_asset}`,
+							outputs: [
+								{address: "{$reserve_to}", amount: "{ $payout }"},
+							]
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							var["reserve"] = $new_reserve;
+							response["new_reserve"] = $new_reserve;
+
+							if ($payout > 0) {
+								response["payout"] = $payout;
+							}
+
+							var["supply_yes"] += $yes_amount;
+							var["supply_no"] += $no_amount;
+							var["supply_draw"] += $draw_amount;
+						}`
+					},
+				]
+			},
+			{ // commit result
+				if: `{$ready AND trigger.data.commit AND !$result}`,
+				init: `{
+					require(timestamp > $end_of_trading_period, "trading period has not yet ended");
+					
+					$current_datafeed_value = data_feed[[oracles=$oracle, feed_name=$feed_name, ifnone='none']];
+					require($current_datafeed_value != 'none' OR timestamp > $end_of_waiting_period, "waiting period has not ended yet");
+
+					if ($comparison == '>')
+							$datafeed_comparison = $current_datafeed_value > $datafeed_value;
+					else if ($comparison == '<')
+							$datafeed_comparison = $current_datafeed_value < $datafeed_value;
+					else if ($comparison == '!=')
+							$datafeed_comparison = $current_datafeed_value != $datafeed_value;
+					else if ($comparison == '==')
+							$datafeed_comparison = $current_datafeed_value == $datafeed_value;
+					else if ($comparison == '>=')
+							$datafeed_comparison = $current_datafeed_value >= $datafeed_value;
+					else if ($comparison == '<=')
+							$datafeed_comparison = $current_datafeed_value <= $datafeed_value;
+					else
+						bounce('Comparison operator not found');
+					
+					if ($datafeed_comparison) {
+						$res = 'yes';
+					} else if ($allow_draw AND $current_datafeed_value == $datafeed_draw_value) {
+						$res = 'draw';
+					} else {
+						$res = 'no';
+					}
+
+				}`,
+				messages: [
+					{
+						app: 'state',
+						state: `{
+							var['result'] = $res;
+							response['messages'] = "The result is committed";
+						}`
+					},
+				]
+			},
+			{ // claim profit
+				if: `{$ready AND $result}`,
+				init: `{
+					$yes_amount = trigger.output[[asset=$yes_asset]];
+					$no_amount = trigger.output[[asset=$no_asset]];
+					$draw_amount = trigger.output[[asset=$draw_asset]];
+
+					require(($reserve_asset == "base" AND $reserve_amount == $network_fee) OR ($reserve_asset != "base" AND $reserve_amount == 0), "should not send a reserve");
+					require($result, "no results yet");
+					$winner_amount = $result == "yes" ? $yes_amount : $result == "no" ? $no_amount : $draw_amount;
+
+					require($result == "draw" OR $winner_amount > 0, "you are sending not a winner token");
+
+					$winner_supply = $result == "yes" ? var["supply_yes"] : $result == "no" ? var["supply_no"] : var["supply_draw"];
+
+					require($winner_supply > 0, "winner supply < 0");
+
+					$price_winner_by_reserve = var["reserve"] / $winner_supply;
+
+					$payout = floor($winner_amount * $price_winner_by_reserve);
+					$reserve_to = trigger.data.reserve_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
+
+				}`,
+				messages: [
+						{
+						if: "{ $payout > 0 }",
+						app: 'payment',
+						payload: {
+							asset: `{$reserve_asset}`,
+							outputs: [
+								{address: "{$reserve_to}", amount: "{ $payout }"},
+							]
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							var['reserve']-= $payout;
+							response["Your profit"] = $payout;
+
+							if($yes_amount > 0){
+								var['supply_yes'] -= $yes_amount;
+							}
+
+							if($no_amount > 0){
+								var['supply_no'] -= $no_amount;
+							}
+
+							if($draw_amount > 0){
+								var['supply_draw'] -= $draw_amount;
+							}
+						}`
+					},
+				]
+			}
+		]
+	}
+}

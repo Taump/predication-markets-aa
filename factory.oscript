@@ -1,0 +1,147 @@
+{
+  doc_url: "https://oswap.io/predication-factory.json",
+	bounce_fees: { base: 20000 },
+	init: `{
+		$predication_base_aa = 'IBDGM7R5D5AOPCTJBBDSCGZMTPGF5Q5W';
+		$define_asset_forwarder = 'E4BAASPOCW6WHXSUOY2XEKXKA42RRD5I';
+	}`,
+  messages: {
+    cases: [
+			{
+				if: `{(trigger.data.yes_asset OR trigger.data.no_asset) AND var['predication_' || trigger.address]}`,
+				messages: [
+					{
+						app: 'data',
+						payload: {
+							define: 1,
+							factory: `{this_address}`,
+							to: `{trigger.address}`
+						}
+					},
+					{
+						if: `{trigger.data.yes_asset AND trigger.data.allow_draw}`,
+						app: 'payment',
+						payload: {
+							asset: 'base',
+							outputs: [
+								{address: '{$define_asset_forwarder}', amount: 4000},
+							]
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							$params = var['predication_' || trigger.address];
+
+							if (trigger.data.yes_asset) {
+								$params.yes_asset = trigger.data.yes_asset;
+								$params.no_asset = trigger.unit;
+							}
+
+							if (trigger.data.no_asset) {
+								$params.draw_asset = trigger.unit;
+							}
+
+							var['predication_' || trigger.address] = $params;
+						}`
+					}
+				]
+			},
+      {
+				init: `{
+					$event = trigger.data.event OTHERWISE '';
+					require(length($event) >= 5 AND length($event) <= 128, "additional description cannot be over 128 chars");
+
+					$oracle = trigger.data.oracle;
+					require($oracle AND is_valid_address($oracle), "oracle isn't valid");
+
+					$comparison = trigger.data.comparison OTHERWISE "==";
+					require($comparison == "==" OR $comparison == ">" OR $comparison == ">=" OR $comparison == "<" OR $comparison == "<=" OR $comparison == "!=", "operation is unknown");
+
+					$feed_name = trigger.data.feed_name OTHERWISE '';
+					require(length($feed_name) > 0 AND $feed_name != "none", "feed_name isn't valid");
+
+					$reserve_asset = trigger.data.reserve_asset OTHERWISE 'base';
+					require(asset[$reserve_asset].exists, "no such asset: " || $reserve_asset);
+
+					$allow_draw = trigger.data.allow_draw OTHERWISE false;
+					require($allow_draw == false OR $allow_draw == true, "allow_draw must be bool");
+
+					$datafeed_value = trigger.data.datafeed_value;
+					require(exists($datafeed_value), "datafeed_value does not exist");		
+
+					$start_of_trading_period = trigger.data.start_of_trading_period OTHERWISE timestamp;
+					require(is_integer($start_of_trading_period) AND $start_of_trading_period > 0, "start_of_trading_period must be integer");
+					
+					$trading_period_length = trigger.data.trading_period_length OTHERWISE 30 * 24 * 3600;
+					require(is_integer($trading_period_length) AND $trading_period_length >= 24 * 3600, "trading period must be longer than a day");
+
+					require($start_of_trading_period + $trading_period_length > timestamp, "trading period has already ended");
+
+					$waiting_period_length = trigger.data.waiting_period_length OTHERWISE 24 * 3600;
+					require(is_integer($waiting_period_length) AND $waiting_period_length >= 0, "trading period must be longer than a day");
+
+					$params = {
+						event: $event,
+						oracle: $oracle,
+						comparison: $comparison,
+						feed_name: $feed_name,
+						reserve_asset: $reserve_asset,
+						allow_draw: $allow_draw,
+						datafeed_value: $datafeed_value,
+						start_of_trading_period: $start_of_trading_period,
+						trading_period_length: $trading_period_length,
+						waiting_period_length: $waiting_period_length
+					};
+
+					if ($allow_draw) {
+						$params.datafeed_draw_value = trigger.data.datafeed_draw_value OTHERWISE 'none';
+					}
+
+					$predication_aa = [
+						'autonomous agent',
+						{
+							base_aa: $predication_base_aa,
+							params: $params
+						}
+					];
+
+					$predication_aa_address = chash160($predication_aa);
+
+					require(!definition[$predication_aa_address], "such a predication already exists: " || $predication_aa_address);
+				}`,
+				messages: [
+					{
+						app: 'payment',
+						payload: {
+							asset: 'base',
+							outputs: [
+								{ address: "{ $predication_aa_address }", amount: 12000 },
+							]
+						}
+					},
+					{
+						app: 'definition',
+						payload: {
+							definition: `{$predication_aa}`
+						}
+					},
+					{
+						app: 'data',
+						payload: {
+							define: 1,
+							factory: `{this_address}`
+						}
+					},
+					{
+						app: 'state',
+						state: `{
+							var['predication_' || $predication_aa_address] = $params;
+							response["predication_address"] =  $predication_aa_address;
+						}`
+					}
+				]
+			}
+    ]
+  }
+}
