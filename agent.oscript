@@ -1,5 +1,5 @@
 {
-	doc_url: "https://obyte.org/predication.json",
+	doc_url: "https://obyte.org/prediction.json",
 	bounce_fees: { base: 10000 },
 	getters: `{
 		$get_reserve = ($yes_amount, $no_amount, $draw_amount) => {

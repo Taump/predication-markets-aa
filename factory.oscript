@@ -1,14 +1,14 @@
 {
-  doc_url: "https://obyte.org/predication-factory.json",
+  doc_url: "https://obyte.org/prediction-factory.json",
 	bounce_fees: { base: 20000 },
 	init: `{
-		$predication_base_aa = '5RJQMAVFTJNNLFFKJS6PYO27QO27FFCS';
+		$prediction_base_aa = 'HRYTXRAZVBKXC6NU7RQRFTTEWJCPGH6R';
 		$define_asset_forwarder = 'E4BAASPOCW6WHXSUOY2XEKXKA42RRD5I';
 	}`,
   messages: {
     cases: [
 			{
-				if: `{(trigger.data.yes_asset OR trigger.data.no_asset) AND var['predication_' || trigger.address]}`,
+				if: `{(trigger.data.yes_asset OR trigger.data.no_asset) AND var['prediction_' || trigger.address]}`,
 				messages: [
 					{
 						app: 'data',
@@ -31,7 +31,7 @@
 					{
 						app: 'state',
 						state: `{
-							$params = var['predication_' || trigger.address];
+							$params = var['prediction_' || trigger.address];
 
 							if (trigger.data.yes_asset) {
 								$params.yes_asset = trigger.data.yes_asset;
@@ -42,7 +42,7 @@
 								$params.draw_asset = trigger.unit;
 							}
 
-							var['predication_' || trigger.address] = $params;
+							var['prediction_' || trigger.address] = $params;
 						}`
 					}
 				]
@@ -106,17 +106,17 @@
 						$params.datafeed_draw_value = trigger.data.datafeed_draw_value OTHERWISE 'none';
 					}
 
-					$predication_aa = [
+					$prediction_aa = [
 						'autonomous agent',
 						{
-							base_aa: $predication_base_aa,
+							base_aa: $prediction_base_aa,
 							params: $params
 						}
 					];
 
-					$predication_aa_address = chash160($predication_aa);
+					$prediction_aa_address = chash160($prediction_aa);
 
-					require(!definition[$predication_aa_address], "such a predication already exists: " || $predication_aa_address);
+					require(!definition[$prediction_aa_address], "such a prediction already exists: " || $prediction_aa_address);
 				}`,
 				messages: [
 					{
@@ -124,14 +124,14 @@
 						payload: {
 							asset: 'base',
 							outputs: [
-								{ address: "{ $predication_aa_address }", amount: 12000 },
+								{ address: "{ $prediction_aa_address }", amount: 12000 },
 							]
 						}
 					},
 					{
 						app: 'definition',
 						payload: {
-							definition: `{$predication_aa}`
+							definition: `{$prediction_aa}`
 						}
 					},
 					{
@@ -144,8 +144,8 @@
 					{
 						app: 'state',
 						state: `{
-							var['predication_' || $predication_aa_address] = $params;
-							response["predication_address"] =  $predication_aa_address;
+							var['prediction_' || $prediction_aa_address] = $params;
+							response["prediction_address"] =  $prediction_aa_address;
 						}`
 					}
 				]

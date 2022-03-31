@@ -4,13 +4,13 @@
 const { expect } = require('chai');
 const path = require('path')
 
-describe('Check predication AA', function () {
+describe('Check prediction AA', function () {
 	this.timeout(120000)
 
 	before(async () => {
 		this.network = await Network.create()
-			.with.agent({ predicationBaseAgent: path.join(__dirname, "../agent.oscript") })
-			.with.agent({ predicationFactoryAgent: path.join(__dirname, "../factory.oscript") })
+			.with.agent({ predictionBaseAgent: path.join(__dirname, "../agent.oscript") })
+			.with.agent({ predictionFactoryAgent: path.join(__dirname, "../factory.oscript") })
 			.with.agent({ forwarderAgent: path.join(__dirname, "../define-asset-forwarder.oscript") })
 			.with.asset({ reserveAsset: {}})
 			.with.wallet({ alice: { base: 10e9, reserveAsset: 10e9 } })
@@ -39,9 +39,9 @@ describe('Check predication AA', function () {
 
 	});
 
-	it('Create predication', async () => {
+	it('Create prediction', async () => {
 		const { unit, error } = await this.network.wallet.alice.triggerAaWithData({
-			toAddress: this.network.agent.predicationFactoryAgent,
+			toAddress: this.network.agent.predictionFactoryAgent,
 			amount: 20000,
 			data: {
 				event: "New year",
@@ -64,18 +64,18 @@ describe('Check predication AA', function () {
 
 		expect(response.bounced).to.be.false;
 
-		expect(response.response.responseVars.predication_address).to.exist;
+		expect(response.response.responseVars.prediction_address).to.exist;
 
-		this.predication_address = response.response.responseVars.predication_address;
+		this.prediction_address = response.response.responseVars.prediction_address;
 
-		const { vars: vars1 } = await this.bob.readAAStateVars(this.predication_address);
-		const { vars: vars2 } = await this.bob.readAAStateVars(this.network.agent.predicationFactoryAgent);
+		const { vars: vars1 } = await this.bob.readAAStateVars(this.prediction_address);
+		const { vars: vars2 } = await this.bob.readAAStateVars(this.network.agent.predictionFactoryAgent);
 
 		expect(vars1.yes_asset).to.exist;
 		expect(vars1.no_asset).to.exist;
 		expect(vars1.draw_asset).to.exist;
 
-		const params = vars2[`predication_${this.predication_address}`];
+		const params = vars2[`prediction_${this.prediction_address}`];
 
 		expect(params.yes_asset).to.exist;
 		expect(params.no_asset).to.exist;
@@ -101,8 +101,8 @@ describe('Check predication AA', function () {
 
 		const { unit, error } = await this.alice.sendMulti({
 			asset: this.reserve_asset,
-			base_outputs: [{ address: this.predication_address, amount: 1e4 }],
-			asset_outputs: [{ address: this.predication_address, amount }],
+			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
+			asset_outputs: [{ address: this.prediction_address, amount }],
 			messages: [{
 				app: 'data',
 				payload: {
@@ -130,7 +130,7 @@ describe('Check predication AA', function () {
 
 		expect(response.bounced).to.be.false;
 
-		const { vars: vars1 } = await this.bob.readAAStateVars(this.predication_address);
+		const { vars: vars1 } = await this.bob.readAAStateVars(this.prediction_address);
 		expect(vars1.supply_yes).to.be.equal(yes_amount);
 		expect(vars1.supply_no).to.be.equal(no_amount);
 		expect(vars1.supply_draw).to.be.equal(draw_amount);
@@ -180,8 +180,8 @@ describe('Check predication AA', function () {
 
 		const { unit, error } = await this.alice.sendMulti({
 			asset: this.reserve_asset,
-			base_outputs: [{ address: this.predication_address, amount: 1e4 }],
-			asset_outputs: [{ address: this.predication_address, amount }],
+			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
+			asset_outputs: [{ address: this.prediction_address, amount }],
 			messages: [{
 				app: 'data',
 				payload: {
@@ -218,8 +218,8 @@ describe('Check predication AA', function () {
 
 		const { unit, error } = await this.alice.sendMulti({
 			asset: this.yes_asset,
-			base_outputs: [{ address: this.predication_address, amount: 1e4 }],
-			asset_outputs: [{ address: this.predication_address, amount: yes_amount }],
+			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
+			asset_outputs: [{ address: this.prediction_address, amount: yes_amount }],
 		});
 
 		expect(error).to.be.null
@@ -229,7 +229,7 @@ describe('Check predication AA', function () {
 
 		const { response } = await this.network.getAaResponseToUnitOnNode(this.alice, unit);
 
-		const { vars: vars1 } = await this.bob.readAAStateVars(this.predication_address);
+		const { vars: vars1 } = await this.bob.readAAStateVars(this.prediction_address);
 
 		const { unitObj } = await this.alice.getUnitInfo({ unit: response.response_unit });
 
@@ -262,8 +262,8 @@ describe('Check predication AA', function () {
 
 		const { unit, error } = await this.bob.sendMulti({
 			asset: this.reserve_asset,
-			base_outputs: [{ address: this.predication_address, amount: 1e4 }],
-			asset_outputs: [{ address: this.predication_address, amount }],
+			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
+			asset_outputs: [{ address: this.prediction_address, amount }],
 			messages: [{
 				app: 'data',
 				payload: {
@@ -291,7 +291,7 @@ describe('Check predication AA', function () {
 		const { response } = await this.network.getAaResponseToUnitOnNode(this.bob, unit);
 		await this.network.witnessUntilStable(response.response_unit);
 
-		const { vars: vars1 } = await this.bob.readAAStateVars(this.predication_address);
+		const { vars: vars1 } = await this.bob.readAAStateVars(this.prediction_address);
 
 		expect(vars1.supply_yes).to.be.equal(this.supply_yes);
 		expect(vars1.supply_no).to.be.equal(this.supply_no);
@@ -340,8 +340,8 @@ describe('Check predication AA', function () {
 
 		const { unit, error: error2 } = await this.bob.sendMulti({
 			asset: this.reserve_asset,
-			base_outputs: [{ address: this.predication_address, amount: 1e4 }],
-			asset_outputs: [{ address: this.predication_address, amount }],
+			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
+			asset_outputs: [{ address: this.prediction_address, amount }],
 			messages: [{
 				app: 'data',
 				payload: {
@@ -363,7 +363,7 @@ describe('Check predication AA', function () {
 
 	it('Bob commit result in wait period (without data_value)', async () => {
 		const { unit, error } = await this.network.wallet.bob.triggerAaWithData({
-			toAddress: this.predication_address,
+			toAddress: this.prediction_address,
 			amount: 1e4,
 			data: {
 				commit: 1
@@ -404,7 +404,7 @@ describe('Check predication AA', function () {
 
 	it('Bob commit result', async () => {
 		const { unit, error } = await this.network.wallet.bob.triggerAaWithData({
-			toAddress: this.predication_address,
+			toAddress: this.prediction_address,
 			amount: 1e4,
 			data: {
 				commit: 1
@@ -418,7 +418,7 @@ describe('Check predication AA', function () {
 		expect(response.bounced).to.be.false;
 		expect(response.response.responseVars.messages).to.be.equal('The result is committed');
 
-		const { vars } = await this.bob.readAAStateVars(this.predication_address);
+		const { vars } = await this.bob.readAAStateVars(this.prediction_address);
 		expect(vars.result).to.be.equal('draw');
 		this.reserve = response.balances[this.reserve_asset];
 	});
@@ -426,8 +426,8 @@ describe('Check predication AA', function () {
 	it('Alice claim profit', async () => {
 		const { unit, error } = await this.alice.sendMulti({
 			asset: this.draw_asset,
-			base_outputs: [{ address: this.predication_address, amount: 1e4 }],
-			asset_outputs: [{ address: this.predication_address, amount: this.alice_draw_amount }],
+			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
+			asset_outputs: [{ address: this.prediction_address, amount: this.alice_draw_amount }],
 		});
 
 		const price = (this.reserve / this.supply_draw);
@@ -451,15 +451,15 @@ describe('Check predication AA', function () {
 		expect(error).to.be.null;
 		expect(unit).to.be.validUnit;
 
-		const { vars } = await this.bob.readAAStateVars(this.predication_address);
+		const { vars } = await this.bob.readAAStateVars(this.prediction_address);
 		expect(vars.supply_yes).to.be.equal(this.supply_yes);
 	});
 
 	it('Alice send lose token', async () => {
 		const { unit } = await this.alice.sendMulti({
 			asset: this.no_asset,
-			base_outputs: [{ address: this.predication_address, amount: 1e4 }],
-			asset_outputs: [{ address: this.predication_address, amount: this.alice_no_amount }],
+			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
+			asset_outputs: [{ address: this.prediction_address, amount: this.alice_no_amount }],
 		});
 
 		const { response } = await this.network.getAaResponseToUnitOnNode(this.alice, unit);

@@ -1,4 +1,4 @@
-# Predication markets AAs
+# Prediction markets AAs
 
 AA oscript:
 
