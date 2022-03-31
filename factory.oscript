@@ -1,8 +1,8 @@
 {
-  doc_url: "https://oswap.io/predication-factory.json",
+  doc_url: "https://obyte.org/predication-factory.json",
 	bounce_fees: { base: 20000 },
 	init: `{
-		$predication_base_aa = 'IBDGM7R5D5AOPCTJBBDSCGZMTPGF5Q5W';
+		$predication_base_aa = '5RJQMAVFTJNNLFFKJS6PYO27QO27FFCS';
 		$define_asset_forwarder = 'E4BAASPOCW6WHXSUOY2XEKXKA42RRD5I';
 	}`,
   messages: {
@@ -81,6 +81,12 @@
 					$waiting_period_length = trigger.data.waiting_period_length OTHERWISE 24 * 3600;
 					require(is_integer($waiting_period_length) AND $waiting_period_length >= 0, "trading period must be longer than a day");
 
+					$issue_fee = trigger.data.issue_fee OTHERWISE 0.01;
+					require($issue_fee >= 0 AND $issue_fee < 1, "issue_fee isn't valid");		
+
+					$redeem_fee = trigger.data.redeem_fee OTHERWISE 0.02;
+					require($redeem_fee >= 0 AND $redeem_fee < 1, "redeem_fee isn't valid");		
+
 					$params = {
 						event: $event,
 						oracle: $oracle,
@@ -91,7 +97,9 @@
 						datafeed_value: $datafeed_value,
 						start_of_trading_period: $start_of_trading_period,
 						trading_period_length: $trading_period_length,
-						waiting_period_length: $waiting_period_length
+						waiting_period_length: $waiting_period_length,
+						issue_fee: $issue_fee,
+						redeem_fee: $redeem_fee
 					};
 
 					if ($allow_draw) {
