@@ -109,6 +109,12 @@
 		$waiting_period_length = params.waiting_period_length OTHERWISE 5 * 24 * 3600;
 		require(is_integer($waiting_period_length) AND $waiting_period_length >= 0, "trading period must be longer than a day");
 
+		$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
+		require($issue_fee >= 0 AND $issue_fee < 1, "issue_fee isn't valid");
+
+		$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.02;
+		require($redeem_fee >= 0 AND $redeem_fee < 1, "redeem_fee isn't valid");
+	
 		// helpers
 		$ready = var['yes_asset'] AND var['no_asset'] AND (var['draw_asset'] OR !$allow_draw);
 
@@ -117,12 +123,6 @@
 		$yes_asset = var['yes_asset'];
 		$no_asset = var['no_asset'];
 		$draw_asset = var['draw_asset'];
-
-		$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
-		require($issue_fee >= 0 AND $issue_fee < 1, "issue_fee isn't valid");
-
-		$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.02;
-		require($redeem_fee >= 0 AND $redeem_fee < 1, "redeem_fee isn't valid");	
 
 		$end_of_waiting_period = $end_of_trading_period + $waiting_period_length;
 
