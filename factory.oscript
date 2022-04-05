@@ -2,7 +2,7 @@
   doc_url: "https://obyte.org/prediction-factory.json",
 	bounce_fees: { base: 20000 },
 	init: `{
-		$prediction_base_aa = 'HRYTXRAZVBKXC6NU7RQRFTTEWJCPGH6R';
+		$prediction_base_aa = 'G2MTLFPFK3GHZQCWKHI3KS3PGCFLU4TA';
 		$define_asset_forwarder = 'E4BAASPOCW6WHXSUOY2XEKXKA42RRD5I';
 	}`,
   messages: {
@@ -59,26 +59,20 @@
 					require($comparison == "==" OR $comparison == ">" OR $comparison == ">=" OR $comparison == "<" OR $comparison == "<=" OR $comparison == "!=", "operation is unknown");
 
 					$feed_name = trigger.data.feed_name OTHERWISE '';
-					require(length($feed_name) > 0 AND $feed_name != "none", "feed_name isn't valid");
+					require(length($feed_name) > 0 AND $feed_name != 'none', "feed_name isn't valid");
 
 					$reserve_asset = trigger.data.reserve_asset OTHERWISE 'base';
 					require(asset[$reserve_asset].exists, "no such asset: " || $reserve_asset);
 
 					$allow_draw = trigger.data.allow_draw OTHERWISE false;
-					require($allow_draw == false OR $allow_draw == true, "allow_draw must be bool");
 
 					$datafeed_value = trigger.data.datafeed_value;
 					require(exists($datafeed_value), "datafeed_value does not exist");		
 
-					$start_of_trading_period = trigger.data.start_of_trading_period OTHERWISE timestamp;
-					require(is_integer($start_of_trading_period) AND $start_of_trading_period > 0, "start_of_trading_period must be integer");
-					
-					$trading_period_length = trigger.data.trading_period_length OTHERWISE 30 * 24 * 3600;
-					require(is_integer($trading_period_length) AND $trading_period_length >= 24 * 3600, "trading period must be longer than a day");
+					$end_of_trading_period = trigger.data.end_of_trading_period OTHERWISE 0;
+					require(is_integer($end_of_trading_period) AND $end_of_trading_period > timestamp, "end_of_trading_period must be integer");
 
-					require($start_of_trading_period + $trading_period_length > timestamp, "trading period has already ended");
-
-					$waiting_period_length = trigger.data.waiting_period_length OTHERWISE 24 * 3600;
+					$waiting_period_length = trigger.data.waiting_period_length OTHERWISE 5 * 24 * 3600;
 					require(is_integer($waiting_period_length) AND $waiting_period_length >= 0, "trading period must be longer than a day");
 
 					$issue_fee = trigger.data.issue_fee OTHERWISE 0.01;
@@ -95,8 +89,7 @@
 						reserve_asset: $reserve_asset,
 						allow_draw: $allow_draw,
 						datafeed_value: $datafeed_value,
-						start_of_trading_period: $start_of_trading_period,
-						trading_period_length: $trading_period_length,
+						end_of_trading_period: $end_of_trading_period,
 						waiting_period_length: $waiting_period_length,
 						issue_fee: $issue_fee,
 						redeem_fee: $redeem_fee

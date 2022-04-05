@@ -3,16 +3,18 @@
 	bounce_fees: { base: 10000 },
 	getters: `{
 		$get_reserve = ($yes_amount, $no_amount, $draw_amount) => {
-			$r = ceil(sqrt($yes_amount^2 + $no_amount^2 + $draw_amount^2));
+			$coef = var['coef'] OTHERWISE 1;
+
+			$r = ceil($coef * sqrt($yes_amount^2 + $no_amount^2 + $draw_amount^2));
 			$r
 		};
 
-		$get_exchange_result = ($yes_amount, $no_amount, $draw_amount, $reserve_amount) => {
-			$supply_yes = var["supply_yes"] OTHERWISE 0;
-			$supply_no = var["supply_no"] OTHERWISE 0;
-			$supply_draw = var["supply_draw"] OTHERWISE 0;
-
-			$current_reserve = balance[params.reserve_asset] - $reserve_amount;
+		$get_exchange_result = ($yes_amount, $no_amount, $draw_amount) => {
+			$supply_yes = var['supply_yes'] OTHERWISE 0;
+			$supply_no = var['supply_no'] OTHERWISE 0;
+			$supply_draw = var['supply_draw'] OTHERWISE 0;
+			$current_reserve = var['reserve'] OTHERWISE 0;
+			$coef = var['coef'] OTHERWISE 1;
 
 			$new_supply_yes = $supply_yes + ($yes_amount ? $yes_amount : 0);
 			$new_supply_no = $supply_no + ($no_amount ? $no_amount : 0);
@@ -20,23 +22,50 @@
 
 			$new_reserve = $get_reserve($new_supply_yes, $new_supply_no, $new_supply_draw);
 
-			$reserve_delta = $current_reserve - $new_reserve;
+			$reserve_delta = $new_reserve - $current_reserve;
 
 			require($new_supply_yes >= 0 AND $new_supply_no >= 0 AND $new_supply_draw >= 0, "too much redeem?");
 			require(params.allow_draw OR $draw_amount == 0, "draw_asset isn't exist");
 
-			require($reserve_delta < 0 OR ($yes_amount <= 0 AND $no_amount <= 0 AND $draw_amount <= 0), "free tokens?)");
+			$reserve_needed = $reserve_delta > 0 ? $reserve_delta : 0;
+			$payout = $reserve_delta < 0 ? abs($reserve_delta) : 0;
 
-			$reserve_needed = $reserve_delta < 0 ? abs($reserve_delta) : 0;
-			$payout = $reserve_delta > 0 ? $reserve_delta : 0;
+			require($payout <= $current_reserve, "too much redeem?");
 
 			$fee = ceil($reserve_needed * params.issue_fee OTHERWISE 0.01 + $payout * params.redeem_fee OTHERWISE 0.02);
 
+			$next_coef = $coef * (($new_reserve + $fee) / $new_reserve);
+
 			{
 				reserve_needed: $reserve_needed,
+				new_reserve: $new_reserve + $fee,
 				payout: $payout,
-				fee: $fee
+				fee: $fee,
+				next_coef: $next_coef
 			}
+		};
+
+		$get_token_count = ($type, $reserve_amount) => {
+			$reserve_asset = params.reserve_asset OTHERWISE 'base';
+			require($type == 'yes' OR $type == 'no' OR $type == 'draw', "unknown type");
+			require(params.allow_draw OR $type != 'draw', "draw token does not exist");
+			require($reserve_amount - ($reserve_asset == 'base' ? 10000 : 0) > 0, "negative amount");
+
+			$reserve = var['reserve'] + $reserve_amount - ($reserve_amount * params.issue_fee) - ($reserve_asset == 'base' ? 10000 : 0);
+			$coef = var['coef'] OTHERWISE 1;
+
+			$supply_yes = var['supply_yes'] OTHERWISE 0;
+			$supply_no = var['supply_no'] OTHERWISE 0;
+			$supply_draw = var['supply_draw'] OTHERWISE 0;
+
+			if ($type == 'yes') {
+				return floor(sqrt($reserve^2/$coef^2 - $supply_no^2 - $supply_draw^2)) - $supply_yes;
+			} else if ($type == 'no') {
+				return floor(sqrt($reserve^2/$coef^2 - $supply_yes^2 - $supply_draw^2)) - $supply_no;
+			} else {
+				return floor(sqrt($reserve^2/$coef^2 - $supply_yes^2 - $supply_no^2)) - $supply_draw;
+			}
+			
 		};
 	}`,
 	init: `{
@@ -57,20 +86,16 @@
 		require(asset[$reserve_asset].exists, "no such asset: " || $reserve_asset);
 
 		$allow_draw = params.allow_draw OTHERWISE false;
-		require($allow_draw == false OR $allow_draw == true, "allow_draw must be bool");
 
 		$datafeed_draw_value = params.datafeed_draw_value OTHERWISE 'none';
 		$datafeed_value = params.datafeed_value;
 
 		require(exists($datafeed_value), "datafeed_value does not exist");
 
-		$start_of_trading_period = params.start_of_trading_period OTHERWISE 0;
-		require(is_integer($start_of_trading_period) AND $start_of_trading_period > 0, "start_of_trading_period must be integer");
-		
-		$trading_period_length = params.trading_period_length OTHERWISE 30 * 24 * 3600;
-		require(is_integer($trading_period_length) AND $trading_period_length >= 24 * 3600, "trading period must be longer than a day");
+		$end_of_trading_period = params.end_of_trading_period OTHERWISE 0;
+		require(is_integer($end_of_trading_period) AND $end_of_trading_period > 0, "end_of_trading_period must be integer");
 
-		$waiting_period_length = params.waiting_period_length OTHERWISE 24 * 3600;
+		$waiting_period_length = params.waiting_period_length OTHERWISE 5 * 24 * 3600;
 		require(is_integer($waiting_period_length) AND $waiting_period_length >= 0, "trading period must be longer than a day");
 
 		// helpers
@@ -88,12 +113,11 @@
 		$redeem_fee = params.redeem_fee OTHERWISE 0.02;
 		require($redeem_fee >= 0 AND $redeem_fee < 1, "redeem_fee isn't valid");	
 
-		$end_of_trading_period = $start_of_trading_period + $trading_period_length;
 		$end_of_waiting_period = $end_of_trading_period + $waiting_period_length;
 
 		$network_fee = ($reserve_asset == 'base') ? 10000 : 0;
 		
-		$reserve_amount	= trigger.output[[asset=$reserve_asset]];
+		$reserve	= var['reserve'] OTHERWISE 0;
 	}`,
 	messages: {
 		cases: [
@@ -104,7 +128,6 @@
 					$define_asset_forwarder = 'E4BAASPOCW6WHXSUOY2XEKXKA42RRD5I';
 					require(($define_type == 'draw_asset' AND $allow_draw) OR $define_type == 'no_asset' OR $define_type == 'yes_asset', "unknown define type");
 					require(!var[$define_type], "asset already defined");
-					
 				}`,
 				messages: [
 					{
@@ -182,32 +205,27 @@
 				]
 			},
 			{ // mint or redeem tokens
-				if: `{$ready AND !$result AND (((trigger.output[[asset=$reserve_asset]] > $network_fee) AND (trigger.data.yes_amount OR trigger.data.no_amount OR trigger.data.draw_amount)) OR trigger.output[[asset=$yes_asset]] > 0 OR trigger.output[[asset=$no_asset]] > 0 OR ($allow_draw AND trigger.output[[asset=$draw_asset]] > 0))}`,
+				if: `{$ready AND !$result AND !exists(trigger.data.claim_profit) AND (((trigger.output[[asset=$reserve_asset]] > $network_fee) AND (trigger.data.yes_amount OR trigger.data.no_amount OR trigger.data.draw_amount OR trigger.data.type)) OR trigger.output[[asset=$yes_asset]] > 0 OR trigger.output[[asset=$no_asset]] > 0 OR ($allow_draw AND trigger.output[[asset=$draw_asset]] > 0))}`,
 				init: `{
-					if (trigger.data.yes_to AND !is_valid_address(trigger.data.yes_to))
-						bounce("bad no_to address");
-					if (trigger.data.tokens2_to AND !is_valid_address(trigger.data.no_to))
-						bounce("bad no_to address");
-					if (trigger.data.reserve_to AND !is_valid_address(trigger.data.reserve_to))
-						bounce("bad reserve_to address");
-					if (trigger.data.draw_to AND !is_valid_address(trigger.data.draw_to))
-						bounce("bad draw_to address");
 					if (trigger.data.to AND !is_valid_address(trigger.data.to))
 						bounce("bad to address");
 					
 					require($allow_draw OR !exists(trigger.data.draw_amount), "draw asset does not exist");
-					require(timestamp >= $start_of_trading_period, "trading period has not started");
-					require(timestamp <= $end_of_trading_period, "the trading period is already closed");
+					require(timestamp <= $end_of_trading_period OR timestamp >= $end_of_waiting_period, "the trading period is closed");
 
-					$yes_to = trigger.data.yes_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
-					$no_to = trigger.data.no_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
-					$draw_to = trigger.data.draw_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
-					$reserve_to = trigger.data.reserve_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
+					if ((trigger.data.yes_amount OR trigger.data.no_amount OR trigger.data.draw_amount OR trigger.output[[asset=$yes_asset]] > 0 OR trigger.output[[asset=$no_asset]] > 0 OR ($allow_draw AND trigger.output[[asset=$draw_asset]] > 0)) AND trigger.data.type) {
+						bounce("both type and amount");
+					}
+					
+					$type = trigger.data.type OTHERWISE false;
+					$reserve_count = trigger.output[[asset=$reserve_asset]];
 
-					$yes_amount = trigger.data.yes_amount OTHERWISE -trigger.output[[asset=$yes_asset]];
-					$no_amount = trigger.data.no_amount OTHERWISE -trigger.output[[asset=$no_asset]];
-					$draw_amount = $allow_draw ? trigger.data.draw_amount OTHERWISE -trigger.output[[asset=$draw_asset]] : 0;	
+					$to = trigger.data.to OTHERWISE trigger.address;
 
+					$yes_amount = (!$type OR $type != 'yes') ? trigger.data.yes_amount OTHERWISE -trigger.output[[asset=$yes_asset]] : $get_token_count('yes', $reserve_count);
+					$no_amount = (!$type OR $type != 'no') ? trigger.data.no_amount OTHERWISE -trigger.output[[asset=$no_asset]] : $get_token_count('no', $reserve_count);
+					$draw_amount = $allow_draw ? ((!$type OR $type != 'draw') ? trigger.data.draw_amount OTHERWISE -trigger.output[[asset=$draw_asset]] : $get_token_count('draw', $reserve_count)) : 0;	
+					
 					if (trigger.data.yes_amount AND (!is_integer(trigger.data.yes_amount) OR trigger.data.yes_amount <= 0))
 						bounce("invalid number of yes_amount");
 					if (trigger.data.no_amount AND (!is_integer(trigger.data.no_amount) OR trigger.data.no_amount <= 0))
@@ -221,14 +239,16 @@
 						bounce("both no_amount param and amount");
 					if ($allow_draw AND trigger.data.draw_amount AND trigger.output[[asset=$draw_asset]] > 0)
 						bounce("both draw_amount param and amount");	
-
-					$reserve_count = trigger.output[[asset=$reserve_asset]];
 					
-					$res = $get_exchange_result($yes_amount, $no_amount, $draw_amount, $reserve_count);
+					log($yes_amount);
+
+					$res = $get_exchange_result($yes_amount, $no_amount, $draw_amount);
 
 					$reserve_needed = $res.reserve_needed;
-		
+					$new_reserve = $res.new_reserve;
+
 					$fee = $res.fee;
+					$next_coef = $res.next_coef;
 
 					$payout = $res.payout + $reserve_count - $reserve_needed - $fee - $network_fee;
 
@@ -243,7 +263,7 @@
 						payload: {
 							asset: `{$yes_asset}`,
 							outputs: [
-								{address: "{$yes_to}", amount: "{$yes_amount}"}
+								{address: "{$to}", amount: "{$yes_amount}"}
 							]
 						}
 					},
@@ -253,7 +273,7 @@
 						payload: {
 							asset: `{$no_asset}`,
 							outputs: [
-								{address: "{$no_to}", amount: "{$no_amount}"}
+								{address: "{$to}", amount: "{$no_amount}"}
 							]
 						}
 					},
@@ -263,7 +283,7 @@
 						payload: {
 							asset: `{$draw_asset}`,
 							outputs: [
-								{address: "{$draw_to}", amount: "{$draw_amount}"}
+								{address: "{$to}", amount: "{$draw_amount}"}
 							]
 						}
 					},				
@@ -273,29 +293,32 @@
 						payload: {
 							asset: `{$reserve_asset}`,
 							outputs: [
-								{address: "{$reserve_to}", amount: "{$payout}"},
+								{address: "{$to}", amount: "{$payout}"},
 							]
 						}
 					},
 					{
 						app: 'state',
 						state: `{
-							response["new_reserve"] = balance[$reserve_asset] - $payout;
+							var['reserve'] = $new_reserve;
+							var['coef'] = $next_coef;
+
+							response['next_coef'] = $next_coef;
 
 							if ($payout > 0) {
-								response["payout"] = $payout;
+								response['payout'] = $payout;
 							}
 
 							if ($fee > 0){
-								response["fee"] = $fee;
+								response['fee'] = $fee;
 							}
 
-							var["supply_yes"] += $yes_amount;
-							var["supply_no"] += $no_amount;
+							var['supply_yes'] += $yes_amount;
+							var['supply_no'] += $no_amount;
 
 							if ($allow_draw) {
-								var["supply_draw"] += $draw_amount;
-							}					
+								var['supply_draw'] += $draw_amount;
+							}
 						}`
 					},
 				]
@@ -306,7 +329,10 @@
 					require(timestamp > $end_of_trading_period, "trading period has not yet ended");
 					
 					$current_datafeed_value = data_feed[[oracles=$oracle, feed_name=$feed_name, ifnone='none']];
-					require($current_datafeed_value != 'none' OR timestamp > $end_of_waiting_period, "waiting period has not ended yet");
+
+					require($current_datafeed_value != 'none', "data_feed is empty");
+					require(timestamp > $end_of_trading_period, "trading period has not ended yet");
+					require(timestamp < $end_of_waiting_period, "it's late, the waiting period has passed");
 
 					if ($comparison == '>')
 							$datafeed_comparison = $current_datafeed_value > $datafeed_value;
@@ -338,30 +364,32 @@
 						state: `{
 							var['result'] = $res;
 							response['messages'] = "The result is committed";
-							response["result"] = $res;
+							response['result'] = $res;
 						}`
 					},
 				]
 			},
 			{ // claim profit
-				if: `{$ready AND $result}`,
+				if: `{$ready AND trigger.data.claim_profit}`,
 				init: `{
 					$yes_amount = trigger.output[[asset=$yes_asset]];
 					$no_amount = trigger.output[[asset=$no_asset]];
 					$draw_amount = $allow_draw ? trigger.output[[asset=$draw_asset]] : 0;
+					$reserve_amount = trigger.output[[asset=$reserve_asset]];
 
-					require(($reserve_asset == "base" AND $reserve_amount == $network_fee) OR ($reserve_asset != "base" AND $reserve_amount == 0), "should not send a reserve");
+					require(($reserve_asset == 'base' AND $reserve_amount == $network_fee) OR ($reserve_asset != 'base' AND $reserve_amount == 0), "should not send a reserve");
+
 					require($result, "no results yet");
 
-					$winner_amount = $result == "yes" ? $yes_amount : $result == "no" ? $no_amount : $draw_amount;
+					$winner_amount = $result == 'yes' ? $yes_amount : $result == 'no' ? $no_amount : $draw_amount;
 
 					require($winner_amount > 0, "you are sending not a winner token");
 
-					$winner_supply = $result == "yes" ? var["supply_yes"] : $result == "no" ? var["supply_no"] : var["supply_draw"];
+					$winner_supply = $result == 'yes' ? var['supply_yes'] : $result == 'no' ? var['supply_no'] : var['supply_draw'];
 
 					require($winner_supply > 0, "winner supply < 0");
 
-					$price_winner_by_reserve = (balance[$reserve_asset] - $network_fee) / $winner_supply;
+					$price_winner_by_reserve = $reserve / $winner_supply;
 
 					$payout = floor($winner_amount * $price_winner_by_reserve);
 					$reserve_to = trigger.data.reserve_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
