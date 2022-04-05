@@ -15,6 +15,9 @@
 			$supply_draw = var['supply_draw'] OTHERWISE 0;
 			$current_reserve = var['reserve'] OTHERWISE 0;
 			$coef = var['coef'] OTHERWISE 1;
+			
+			$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
+			$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.01;
 
 			$new_supply_yes = $supply_yes + ($yes_amount ? $yes_amount : 0);
 			$new_supply_no = $supply_no + ($no_amount ? $no_amount : 0);
@@ -32,7 +35,7 @@
 
 			require($payout <= $current_reserve, "too much redeem?");
 
-			$fee = ceil($reserve_needed * params.issue_fee OTHERWISE 0.01 + $payout * params.redeem_fee OTHERWISE 0.02);
+			$fee = ceil($reserve_needed * $issue_fee + $payout * $redeem_fee);
 
 			$next_coef = $coef * (($new_reserve + $fee) / $new_reserve);
 
@@ -47,11 +50,13 @@
 
 		$get_token_count = ($type, $reserve_amount) => {
 			$reserve_asset = params.reserve_asset OTHERWISE 'base';
+			$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
+
 			require($type == 'yes' OR $type == 'no' OR $type == 'draw', "unknown type");
 			require(params.allow_draw OR $type != 'draw', "draw token does not exist");
 			require($reserve_amount - ($reserve_asset == 'base' ? 10000 : 0) > 0, "negative amount");
 
-			$reserve = var['reserve'] + $reserve_amount - ($reserve_amount * params.issue_fee) - ($reserve_asset == 'base' ? 10000 : 0);
+			$reserve = var['reserve'] + $reserve_amount - ($reserve_amount * $issue_fee) - ($reserve_asset == 'base' ? 10000 : 0);
 			$coef = var['coef'] OTHERWISE 1;
 
 			$supply_yes = var['supply_yes'] OTHERWISE 0;
@@ -107,10 +112,10 @@
 		$no_asset = var['no_asset'];
 		$draw_asset = var['draw_asset'];
 
-		$issue_fee = params.issue_fee OTHERWISE 0.01;
+		$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
 		require($issue_fee >= 0 AND $issue_fee < 1, "issue_fee isn't valid");
 
-		$redeem_fee = params.redeem_fee OTHERWISE 0.02;
+		$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.01;
 		require($redeem_fee >= 0 AND $redeem_fee < 1, "redeem_fee isn't valid");	
 
 		$end_of_waiting_period = $end_of_trading_period + $waiting_period_length;
@@ -392,7 +397,7 @@
 					$price_winner_by_reserve = $reserve / $winner_supply;
 
 					$payout = floor($winner_amount * $price_winner_by_reserve);
-					$reserve_to = trigger.data.reserve_to OTHERWISE trigger.data.to OTHERWISE trigger.address;
+					$reserve_to = trigger.data.to OTHERWISE trigger.address;
 
 				}`,
 				messages: [
