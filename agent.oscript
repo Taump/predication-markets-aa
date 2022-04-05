@@ -48,7 +48,7 @@
 			}
 		};
 
-		$get_token_count = ($type, $reserve_amount) => {
+		$get_token_amount = ($type, $reserve_amount) => {
 			$reserve_asset = params.reserve_asset OTHERWISE 'base';
 			$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
 
@@ -122,7 +122,7 @@
 
 		$network_fee = ($reserve_asset == 'base') ? 10000 : 0;
 		
-		$reserve	= var['reserve'] OTHERWISE 0;
+		$reserve = var['reserve'] OTHERWISE 0;
 	}`,
 	messages: {
 		cases: [
@@ -223,13 +223,13 @@
 					}
 					
 					$type = trigger.data.type OTHERWISE false;
-					$reserve_count = trigger.output[[asset=$reserve_asset]];
+					$reserve_amount = trigger.output[[asset=$reserve_asset]];
 
 					$to = trigger.data.to OTHERWISE trigger.address;
 
-					$yes_amount = (!$type OR $type != 'yes') ? trigger.data.yes_amount OTHERWISE -trigger.output[[asset=$yes_asset]] : $get_token_count('yes', $reserve_count);
-					$no_amount = (!$type OR $type != 'no') ? trigger.data.no_amount OTHERWISE -trigger.output[[asset=$no_asset]] : $get_token_count('no', $reserve_count);
-					$draw_amount = $allow_draw ? ((!$type OR $type != 'draw') ? trigger.data.draw_amount OTHERWISE -trigger.output[[asset=$draw_asset]] : $get_token_count('draw', $reserve_count)) : 0;	
+					$yes_amount = (!$type OR $type != 'yes') ? trigger.data.yes_amount OTHERWISE -trigger.output[[asset=$yes_asset]] : $get_token_amount('yes', $reserve_amount);
+					$no_amount = (!$type OR $type != 'no') ? trigger.data.no_amount OTHERWISE -trigger.output[[asset=$no_asset]] : $get_token_amount('no', $reserve_amount);
+					$draw_amount = $allow_draw ? ((!$type OR $type != 'draw') ? trigger.data.draw_amount OTHERWISE -trigger.output[[asset=$draw_asset]] : $get_token_amount('draw', $reserve_amount)) : 0;	
 					
 					if (trigger.data.yes_amount AND (!is_integer(trigger.data.yes_amount) OR trigger.data.yes_amount <= 0))
 						bounce("invalid number of yes_amount");
@@ -255,10 +255,10 @@
 					$fee = $res.fee;
 					$next_coef = $res.next_coef;
 
-					$payout = $res.payout + $reserve_count - $reserve_needed - $fee - $network_fee;
+					$payout = $res.payout + $reserve_amount - $reserve_needed - $fee - $network_fee;
 
 					if ($reserve_needed > 0) {
-						require($reserve_needed + $fee + $network_fee <= $reserve_count, "expected reserve amount: " || ($reserve_needed + $fee + $network_fee));
+						require($reserve_needed + $fee + $network_fee <= $reserve_amount, "expected reserve amount: " || ($reserve_needed + $fee + $network_fee));
 					}
 				}`,
 				messages: [
