@@ -13,11 +13,12 @@
 			$supply_yes = var['supply_yes'] OTHERWISE 0;
 			$supply_no = var['supply_no'] OTHERWISE 0;
 			$supply_draw = var['supply_draw'] OTHERWISE 0;
+
 			$current_reserve = var['reserve'] OTHERWISE 0;
 			$coef = var['coef'] OTHERWISE 1;
 			
 			$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
-			$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.01;
+			$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.02;
 
 			$new_supply_yes = $supply_yes + ($yes_amount ? $yes_amount : 0);
 			$new_supply_no = $supply_no + ($no_amount ? $no_amount : 0);
@@ -56,21 +57,26 @@
 			require(params.allow_draw OR $type != 'draw', "draw token does not exist");
 			require($reserve_amount - ($reserve_asset == 'base' ? 10000 : 0) > 0, "negative amount");
 
-			$reserve = var['reserve'] + $reserve_amount - ($reserve_amount * $issue_fee) - ($reserve_asset == 'base' ? 10000 : 0);
 			$coef = var['coef'] OTHERWISE 1;
 
 			$supply_yes = var['supply_yes'] OTHERWISE 0;
 			$supply_no = var['supply_no'] OTHERWISE 0;
 			$supply_draw = var['supply_draw'] OTHERWISE 0;
+			$network_fee = ($reserve_asset == 'base' ? 10000 : 0);
+
+			$fee = ceil($reserve_amount - $network_fee - (($reserve_amount - $network_fee) / (1 + $issue_fee)));
+
+			$reserve = var['reserve'] + $reserve_amount - $fee - $network_fee;
+
+			$ratio = $reserve^2/$coef^2;
 
 			if ($type == 'yes') {
-				return floor(sqrt($reserve^2/$coef^2 - $supply_no^2 - $supply_draw^2)) - $supply_yes;
+				return floor(sqrt($ratio - $supply_no^2 - $supply_draw^2)) - $supply_yes;
 			} else if ($type == 'no') {
-				return floor(sqrt($reserve^2/$coef^2 - $supply_yes^2 - $supply_draw^2)) - $supply_no;
+				return floor(sqrt($ratio - $supply_yes^2 - $supply_draw^2)) - $supply_no;
 			} else {
-				return floor(sqrt($reserve^2/$coef^2 - $supply_yes^2 - $supply_no^2)) - $supply_draw;
+				return floor(sqrt($ratio - $supply_yes^2 - $supply_no^2)) - $supply_draw;
 			}
-			
 		};
 	}`,
 	init: `{
@@ -115,7 +121,7 @@
 		$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
 		require($issue_fee >= 0 AND $issue_fee < 1, "issue_fee isn't valid");
 
-		$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.01;
+		$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.02;
 		require($redeem_fee >= 0 AND $redeem_fee < 1, "redeem_fee isn't valid");	
 
 		$end_of_waiting_period = $end_of_trading_period + $waiting_period_length;
@@ -123,6 +129,13 @@
 		$network_fee = ($reserve_asset == 'base') ? 10000 : 0;
 		
 		$reserve = var['reserve'] OTHERWISE 0;
+		$reserve_amount = trigger.output[[asset=$reserve_asset]];
+
+		$type = trigger.data.type OTHERWISE false;
+		
+		if ($type) {
+			require($type == 'yes' OR $type == 'no' OR $type == 'draw', "unknown type");
+		}
 	}`,
 	messages: {
 		cases: [
@@ -222,8 +235,11 @@
 						bounce("both type and amount");
 					}
 					
-					$type = trigger.data.type OTHERWISE false;
-					$reserve_amount = trigger.output[[asset=$reserve_asset]];
+					$min_expected_amount = trigger.data.min_expected_amount OTHERWISE 0;
+
+					if ($type AND (!is_integer($min_expected_amount) OR $min_expected_amount < 0)) {
+						bounce("invalid min_expected_amount");
+					}
 
 					$to = trigger.data.to OTHERWISE trigger.address;
 
@@ -244,21 +260,18 @@
 						bounce("both no_amount param and amount");
 					if ($allow_draw AND trigger.data.draw_amount AND trigger.output[[asset=$draw_asset]] > 0)
 						bounce("both draw_amount param and amount");	
-					
-					log($yes_amount);
 
 					$res = $get_exchange_result($yes_amount, $no_amount, $draw_amount);
 
-					$reserve_needed = $res.reserve_needed;
-					$new_reserve = $res.new_reserve;
+					$payout = floor($res.payout + $reserve_amount - $res.reserve_needed - $res.fee - $network_fee);
 
-					$fee = $res.fee;
-					$next_coef = $res.next_coef;
+					if ($type) {
+						$amount = $type == 'yes' ? $yes_amount : ($type == 'no' ? $no_amount : $draw_amount);
+						require($amount >= $min_expected_amount, "amount less than minimum");
+					}
 
-					$payout = $res.payout + $reserve_amount - $reserve_needed - $fee - $network_fee;
-
-					if ($reserve_needed > 0) {
-						require($reserve_needed + $fee + $network_fee <= $reserve_amount, "expected reserve amount: " || ($reserve_needed + $fee + $network_fee));
+					if ($res.reserve_needed > 0) {
+						require($res.reserve_needed + $res.fee + $network_fee <= $reserve_amount, "expected reserve amount: " || ($res.reserve_needed + $res.fee + $network_fee));
 					}
 				}`,
 				messages: [
@@ -305,17 +318,17 @@
 					{
 						app: 'state',
 						state: `{
-							var['reserve'] = $new_reserve;
-							var['coef'] = $next_coef;
+							var['reserve'] = $res.new_reserve;
+							var['coef'] = $res.next_coef;
 
-							response['next_coef'] = $next_coef;
+							response['next_coef'] = $res.next_coef;
 
 							if ($payout > 0) {
 								response['payout'] = $payout;
 							}
 
-							if ($fee > 0){
-								response['fee'] = $fee;
+							if ($res.fee > 0){
+								response['fee'] = $res.fee;
 							}
 
 							var['supply_yes'] += $yes_amount;
@@ -380,7 +393,6 @@
 					$yes_amount = trigger.output[[asset=$yes_asset]];
 					$no_amount = trigger.output[[asset=$no_asset]];
 					$draw_amount = $allow_draw ? trigger.output[[asset=$draw_asset]] : 0;
-					$reserve_amount = trigger.output[[asset=$reserve_asset]];
 
 					require(($reserve_asset == 'base' AND $reserve_amount == $network_fee) OR ($reserve_asset != 'base' AND $reserve_amount == 0), "should not send a reserve");
 
@@ -397,8 +409,7 @@
 					$price_winner_by_reserve = $reserve / $winner_supply;
 
 					$payout = floor($winner_amount * $price_winner_by_reserve);
-					$reserve_to = trigger.data.to OTHERWISE trigger.address;
-
+					$to = trigger.data.to OTHERWISE trigger.address;
 				}`,
 				messages: [
 						{
@@ -407,7 +418,7 @@
 						payload: {
 							asset: `{$reserve_asset}`,
 							outputs: [
-								{address: "{$reserve_to}", amount: "{$payout}"},
+								{address: "{$to}", amount: "{$payout}"},
 							]
 						}
 					},

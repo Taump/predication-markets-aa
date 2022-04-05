@@ -4,7 +4,7 @@
 const { expect } = require('chai');
 const path = require('path')
 
-describe('Check prediction AA: 3', function () {
+describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 	this.timeout(120000)
 
 	before(async () => {

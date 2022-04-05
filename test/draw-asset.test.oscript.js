@@ -5,7 +5,7 @@ const { expect } = require('chai');
 const Decimal = require('decimal.js');
 const path = require('path');
 
-describe('Check prediction AA: 2', function () {
+describe('Check prediction AA: 3 (draw-asset)', function () {
 	this.timeout(120000)
 
 	before(async () => {
@@ -39,10 +39,19 @@ describe('Check prediction AA: 2', function () {
 		this.datafeed_value = 'YES';
 		this.issue_fee = 0.01;
 		this.redeem_fee = 0.02;
+
 		this.supply_yes = 0;
 		this.supply_no = 0;
 		this.supply_draw = 0;
 		this.reserve = 0;
+
+		this.alice_yes_amount = 0;
+		this.alice_no_amount = 0;
+		this.alice_draw_amount = 0;
+
+		this.bob_yes_amount = 0;
+		this.bob_no_amount = 0;
+		this.bob_draw_amount = 0;
 
 		this.buy = (amount_yes, amount_no, amount_draw, readOnly) => {
 			const BN = (num) => new Decimal(num);
@@ -56,7 +65,7 @@ describe('Check prediction AA: 2', function () {
 
 			const fee = Math.ceil(reserve_needed * this.issue_fee + payout * this.redeem_fee);
 
-			const next_coef = this.coef * ((new_reserve + fee) / new_reserve);
+			// const next_coef = this.coef * ((new_reserve + fee) / new_reserve);
 			const bn_next_coef = BN(this.coef).mul((new_reserve + fee) / new_reserve).toNumber()
 
 			if (!readOnly) {
@@ -89,7 +98,9 @@ describe('Check prediction AA: 2', function () {
 				datafeed_value: this.datafeed_value,
 				end_of_trading_period: this.end_of_trading_period,
 				waiting_period_length: this.waiting_period_length,
-				reserve_asset: this.reserve_asset
+				reserve_asset: this.reserve_asset,
+				issue_fee: this.issue_fee,
+				redeem_fee: this.redeem_fee
 			}
 		});
 
@@ -126,6 +137,50 @@ describe('Check prediction AA: 2', function () {
 		this.draw_asset = vars1.draw_asset;
 	});
 
+	it('Bob issues tokens by type (yes)', async () => {
+		const yes_amount = 2 * 1e7;
+		const res = this.buy(yes_amount, 0, 0);
+		const amount = res.reserve_needed + res.fee;
+
+		const { unit, error } = await this.bob.sendMulti({
+			asset: this.reserve_asset,
+			asset_outputs: [{ address: this.prediction_address, amount }],
+			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
+			messages: [{
+				app: 'data',
+				payload: {
+					type: 'yes'
+				}
+			}]
+		})
+
+		expect(error).to.be.null
+		expect(unit).to.be.validUnit
+
+		const { response } = await this.network.getAaResponseToUnitOnNode(this.bob, unit);
+
+		await this.network.witnessUntilStable(response.response_unit);
+
+		expect(response.bounced).to.be.false;
+		const { vars: vars1 } = await this.bob.readAAStateVars(this.prediction_address);
+
+		expect(vars1.supply_yes).to.be.equal(this.supply_yes);
+		expect(vars1.supply_no).to.be.equal(this.supply_no);
+		expect(vars1.reserve).to.be.equal(this.reserve);
+
+		const { unitObj } = await this.bob.getUnitInfo({ unit: response.response_unit })
+
+		expect(Utils.getExternalPayments(unitObj)).to.deep.equalInAnyOrder([
+			{
+				address: this.bobAddress,
+				asset: this.yes_asset,
+				amount: yes_amount,
+			}
+		]);
+
+		this.bob_yes_amount += yes_amount;
+	});
+
 	it('Alice issue tokens', async () => {
 		const yes_amount = 0.5 * 1e9;
 		const no_amount = 0.5 * 1e9;
@@ -159,9 +214,9 @@ describe('Check prediction AA: 2', function () {
 		expect(response.bounced).to.be.false;
 
 		const { vars: vars1 } = await this.bob.readAAStateVars(this.prediction_address);
-		expect(vars1.supply_yes).to.be.equal(yes_amount);
-		expect(vars1.supply_no).to.be.equal(no_amount);
-		expect(vars1.supply_draw).to.be.equal(draw_amount);
+		expect(vars1.supply_yes).to.be.equal(this.supply_yes);
+		expect(vars1.supply_no).to.be.equal(this.supply_no);
+		expect(vars1.supply_draw).to.be.equal(this.supply_draw);
 		expect(vars1.reserve).to.be.equal(this.reserve);
 
 		const { unitObj } = await this.alice.getUnitInfo({ unit: response.response_unit })
@@ -189,14 +244,9 @@ describe('Check prediction AA: 2', function () {
 			},
 		]);
 
-		this.alice_yes_amount = yes_amount;
-		this.alice_no_amount = no_amount;
-		this.alice_draw_amount = draw_amount;
-
-		this.supply_yes = yes_amount;
-		this.supply_no = no_amount;
-		this.supply_draw = draw_amount;
-
+		this.alice_yes_amount += yes_amount;
+		this.alice_no_amount += no_amount;
+		this.alice_draw_amount += draw_amount;
 	});
 
 	it('Alice issue tokens (not enough reserve)', async () => {
@@ -336,10 +386,10 @@ describe('Check prediction AA: 2', function () {
 		this.bob_no_amount = no_amount;
 		this.bob_draw_amount = draw_amount;
 	});
-
-	it('Bob issues tokens by type', async () => {
-
-		const res = this.buy(2e7, 0, 0);
+	
+	it('Bob issues tokens by type (no)', async () => {
+		const no_amount = 5 * 1e9;
+		const res = this.buy(0, no_amount, 0);
 		const amount = res.reserve_needed + res.fee;
 
 		const { unit, error } = await this.bob.sendMulti({
@@ -349,7 +399,7 @@ describe('Check prediction AA: 2', function () {
 			messages: [{
 				app: 'data',
 				payload: {
-					type: 'yes'
+					type: 'no'
 				}
 			}]
 		})
@@ -364,28 +414,23 @@ describe('Check prediction AA: 2', function () {
 		expect(response.bounced).to.be.false;
 		const { vars: vars1 } = await this.bob.readAAStateVars(this.prediction_address);
 
-		// expect(vars1.supply_yes).to.be.equal(this.supply_yes);
-		// expect(vars1.supply_no).to.be.equal(this.supply_no);
-		// expect(vars1.reserve).to.be.equal(this.reserve);
+		expect(vars1.supply_yes).to.be.equal(this.supply_yes);
+		expect(vars1.supply_no).to.be.equal(this.supply_no);
+		expect(vars1.reserve).to.be.equal(this.reserve);
 
 		const { unitObj } = await this.bob.getUnitInfo({ unit: response.response_unit })
 
 		expect(Utils.getExternalPayments(unitObj)).to.deep.equalInAnyOrder([
 			{
 				address: this.bobAddress,
-				asset: this.yes_asset,
-				amount: 2e7,
-			},
-			{
-				asset: this.reserve_asset,
-				address: this.bobAddress,
-				amount: 0
-			},
+				asset: this.no_asset,
+				amount: no_amount,
+			}
 		]);
 
-		this.bob_yes_amount += 5e7;
+		this.bob_no_amount += no_amount;
 	});
-	
+
 	it('Bob issues tokens after the period expires', async () => {
 		const { error } = await this.network.timetravel({ shift: (this.end_of_trading_period - this.current_timestamp + 100) * 1000 });
 		expect(error).to.be.null;
@@ -438,6 +483,7 @@ describe('Check prediction AA: 2', function () {
 
 
 	it('Alice claim profit (no result)', async () => {
+		console.log('test', this.alice_yes_amount)
 		const { unit, error } = await this.alice.sendMulti({
 			asset: this.yes_asset,
 			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
@@ -450,10 +496,10 @@ describe('Check prediction AA: 2', function () {
 			}]
 		});
 
-		const { response } = await this.network.getAaResponseToUnitOnNode(this.alice, unit);
-
 		expect(error).to.be.null;
 		expect(unit).to.be.validUnit;
+
+		const { response } = await this.network.getAaResponseToUnitOnNode(this.alice, unit);
 
 		expect(response.response.error).to.be.equal("no results yet");
 	});
@@ -495,7 +541,6 @@ describe('Check prediction AA: 2', function () {
 
 		const { vars } = await this.bob.readAAStateVars(this.prediction_address);
 		expect(vars.result).to.be.equal('yes');
-		this.reserve = response.balances[this.reserve_asset];
 	});
 
 	it('Alice claim profit', async () => {
