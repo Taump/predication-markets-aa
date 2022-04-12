@@ -9,16 +9,33 @@
 			$r
 		};
 
+		$get_price_by_type = ($type) => {
+			$allow_draw = params.allow_draw OTHERWISE false;
+			$supply_yes = var['supply_yes'] OTHERWISE 0;
+			$supply_no = var['supply_no'] OTHERWISE 0;
+			$supply_draw = var['supply_draw'] OTHERWISE 0;
+			$coef = var['coef'] OTHERWISE 1;
+
+			require($type == 'yes' OR $type == 'no' OR $type == 'draw', "unknown type");
+			require($allow_draw OR $type != 'draw', "draw token does not exist");
+			require(($supply_yes + $supply_no + $supply_draw) != 0, "no supply");
+
+			$token_amount_by_type = $type == 'yes' ? $supply_yes : $type == 'no' ? $supply_no : $supply_draw ;
+			$price = $coef * ($token_amount_by_type / sqrt($supply_yes^2 + $supply_no^2 + $supply_draw^2));
+
+			$price
+		};
+
 		$get_exchange_result = ($yes_amount, $no_amount, $draw_amount) => {
 			$supply_yes = var['supply_yes'] OTHERWISE 0;
 			$supply_no = var['supply_no'] OTHERWISE 0;
 			$supply_draw = var['supply_draw'] OTHERWISE 0;
-
+			$allow_draw = params.allow_draw OTHERWISE false;
 			$current_reserve = var['reserve'] OTHERWISE 0;
 			$coef = var['coef'] OTHERWISE 1;
-			
 			$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
 			$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.02;
+			$arb_profit_tax = exists(params.arb_profit_tax) ? params.arb_profit_tax : 0.03;
 
 			$new_supply_yes = $supply_yes + ($yes_amount ? $yes_amount : 0);
 			$new_supply_no = $supply_no + ($no_amount ? $no_amount : 0);
@@ -29,14 +46,47 @@
 			$reserve_delta = $new_reserve - $current_reserve;
 
 			require($new_supply_yes >= 0 AND $new_supply_no >= 0 AND $new_supply_draw >= 0, "too much redeem?");
-			require(params.allow_draw OR $draw_amount == 0, "draw_asset isn't exist");
+			require($allow_draw OR $draw_amount == 0, "draw_asset isn't exist");
 
 			$reserve_needed = $reserve_delta > 0 ? $reserve_delta : 0;
 			$payout = $reserve_delta < 0 ? abs($reserve_delta) : 0;
 
 			require($payout <= $current_reserve, "too much redeem?");
 
-			$fee = ceil($reserve_needed * $issue_fee + $payout * $redeem_fee);
+			// calc arb profit fee
+			if (($supply_yes + $supply_no + $supply_draw) != 0) {
+				$old_den = sqrt($supply_yes^2 + $supply_no^2 + $supply_draw^2);
+
+				$old_yes_price = $coef * ($supply_yes / $old_den);
+				$old_no_price = $coef * ($supply_no / $old_den);
+				$old_draw_price = $coef * ($supply_draw / $old_den);
+
+				$avg_old_price = (($yes_amount != 0 ? $old_yes_price : 0) + ($no_amount != 0 ? $old_no_price : 0) + ($draw_amount != 0 ? $old_draw_price : 0)) / (($yes_amount != 0 ? 1 : 0) + ($no_amount != 0 ? 1 : 0) + ($draw_amount != 0 ? 1 : 0));
+
+				$reserve_for_yes_token = abs($yes_amount * $avg_old_price);
+				$reserve_for_no_token = abs($no_amount * $avg_old_price);
+				$reserve_for_draw_token = abs($draw_amount * $avg_old_price);
+				
+				$new_den = sqrt($new_supply_yes^2 + $new_supply_no^2 + $new_supply_draw^2);
+
+				$new_yes_price = $coef * ($new_supply_yes / $new_den);
+				$new_no_price = $coef * ($new_supply_no / $new_den);
+				$new_draw_price = $coef * ($new_supply_draw / $new_den);
+
+				$yes_arb_profit_tax = ((($old_yes_price - $new_draw_price) * $reserve_for_yes_token) / 2) * $arb_profit_tax;
+				$no_arb_profit_tax = ((($old_yes_price - $new_draw_price) * $reserve_for_yes_token) / 2) * $arb_profit_tax;
+				$draw_arb_profit_tax = $allow_draw ? ((($old_yes_price - $new_draw_price) * $reserve_for_yes_token) / 2) * $arb_profit_tax : 0;
+
+			} else {
+				$yes_arb_profit_tax = 0;
+				$no_arb_profit_tax = 0;
+				$draw_arb_profit_tax = 0;
+			}
+
+			$total_arb_profit_tax = $yes_arb_profit_tax + $no_arb_profit_tax + $draw_arb_profit_tax;
+			require($yes_arb_profit_tax >= 0 AND $no_arb_profit_tax >= 0 AND $draw_arb_profit_tax >= 0, "negative arb profit tax");
+
+			$fee = ceil($reserve_needed * $issue_fee + $payout * $redeem_fee + $total_arb_profit_tax);
 
 			$next_coef = $coef * (($new_reserve + $fee) / $new_reserve);
 
@@ -45,6 +95,7 @@
 				new_reserve: $new_reserve + $fee,
 				payout: $payout,
 				fee: $fee,
+				arb_profit_tax: $total_arb_profit_tax,
 				next_coef: $next_coef
 			}
 		};
@@ -330,6 +381,8 @@
 							if ($res.fee > 0){
 								response['fee'] = $res.fee;
 							}
+
+							response['arb_profit_tax'] = $res.arb_profit_tax;
 
 							var['supply_yes'] += $yes_amount;
 							var['supply_no'] += $no_amount;
