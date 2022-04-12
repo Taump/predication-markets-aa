@@ -20,7 +20,7 @@
 			require($allow_draw OR $type != 'draw', "draw token does not exist");
 			require(($supply_yes + $supply_no + $supply_draw) != 0, "no supply");
 
-			$token_amount_by_type = $type == 'yes' ? $supply_yes : $type == 'no' ? $supply_no : $supply_draw ;
+			$token_amount_by_type = $type == 'yes' ? $supply_yes : $type == 'no' ? $supply_no : $supply_draw;
 			$price = $coef * ($token_amount_by_type / sqrt($supply_yes^2 + $supply_no^2 + $supply_draw^2));
 
 			$price
@@ -101,6 +101,7 @@
 		$get_token_amount = ($type, $reserve_amount) => {
 			$reserve_asset = params.reserve_asset OTHERWISE 'base';
 			$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
+			$arb_profit_tax = exists(params.arb_profit_tax) ? params.arb_profit_tax : 0.03;
 
 			require($type == 'yes' OR $type == 'no' OR $type == 'draw', "unknown type");
 			require(params.allow_draw OR $type != 'draw', "draw token does not exist");
@@ -111,6 +112,7 @@
 			$supply_yes = var['supply_yes'] OTHERWISE 0;
 			$supply_no = var['supply_no'] OTHERWISE 0;
 			$supply_draw = var['supply_draw'] OTHERWISE 0;
+
 			$network_fee = ($reserve_asset == 'base' ? 10000 : 0);
 
 			$fee = ceil($reserve_amount - $network_fee - (($reserve_amount - $network_fee) / (1 + $issue_fee)));
@@ -118,14 +120,51 @@
 			$reserve = var['reserve'] + $reserve_amount - $fee - $network_fee;
 
 			$ratio = $reserve^2/$coef^2;
+			
+			$supply_yes_squared = $supply_yes^2;
+			$supply_no_squared = $supply_no^2;
+			$supply_draw_squared = $supply_draw^2;
 
 			if ($type == 'yes') {
-				return floor(sqrt($ratio - $supply_no^2 - $supply_draw^2)) - $supply_yes;
+				$prepare_calc = $ratio - $supply_no_squared - $supply_draw_squared;
 			} else if ($type == 'no') {
-				return floor(sqrt($ratio - $supply_yes^2 - $supply_draw^2)) - $supply_no;
+				$prepare_calc = $ratio - $supply_yes_squared - $supply_draw_squared;
 			} else {
-				return floor(sqrt($ratio - $supply_yes^2 - $supply_no^2)) - $supply_draw;
+				$prepare_calc = $ratio - $supply_yes_squared - $supply_no_squared;
 			}
+
+			$supply = $type == 'yes' ? $supply_yes : $type == 'no' ? $supply_no : $supply_draw;
+			$amount = floor(sqrt($prepare_calc) - $supply);
+			
+			if (($supply_yes + $supply_no + $supply_draw) != 0) {
+				$old_den = sqrt($supply_yes_squared + $supply_no_squared + $supply_draw_squared);
+				$old_price = $coef * ($supply / $old_den);
+				$new_supply = $supply + $amount;
+				$new_supply_squared = $new_supply^2;
+
+				$new_den = sqrt(($type == 'yes' ? $new_supply_squared : $supply_yes_squared) + ($type == 'no' ? $new_supply_squared : $supply_no_squared) + ($type == 'draw' ? $new_supply_squared : $supply_draw_squared));
+				$new_price = $coef * ($new_supply / $new_den);
+				$arb_profit_tax_amount = ((abs($old_price - $new_price) * $reserve_amount) / 2) * $arb_profit_tax;
+
+				$fee_with_arb_profit_tax = ceil($reserve_amount - $network_fee - (($reserve_amount - $network_fee) / (1 + $issue_fee))) + $arb_profit_tax_amount;
+
+				$reserve_without_tax_and_fee = var['reserve'] + $reserve_amount - $fee_with_arb_profit_tax - $network_fee;
+				$new_ratio = $reserve_without_tax_and_fee^2/$coef^2;
+
+				if ($type == 'yes') {
+					$prepare_calc_2 = $new_ratio - $supply_no_squared - $supply_draw_squared;
+				} else if ($type == 'no') {
+					$prepare_calc_2 = $new_ratio - $supply_yes_squared - $supply_draw_squared;
+				} else {
+					$prepare_calc_2 = $new_ratio - $supply_yes_squared - $supply_no_squared;
+				}
+
+				return floor(sqrt($prepare_calc_2) - $supply);
+
+			} else {
+				return $amount;
+			}
+
 		};
 	}`,
 	init: `{
