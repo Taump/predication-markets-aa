@@ -141,6 +141,9 @@
 					{
 						app: 'state',
 						state: `{
+							$params.created_at = timestamp;
+							$params.creator = trigger.initial_address;
+
 							var['prediction_' || $prediction_aa_address] = $params;
 							response["prediction_address"] =  $prediction_aa_address;
 						}`

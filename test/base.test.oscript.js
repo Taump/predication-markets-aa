@@ -211,6 +211,8 @@ describe('Check prediction AA: 1 (base)', function () {
 		const params = vars2[`prediction_${this.prediction_address}`];
 
 		expect(params.yes_asset).to.exist;
+		expect(params.creator).to.be.equals(this.aliceAddress);
+		expect(params.created_at).to.exist;
 		expect(params.no_asset).to.exist;
 		expect(params.draw_asset).to.not.exist;
 
