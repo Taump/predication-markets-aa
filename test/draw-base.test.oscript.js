@@ -7,7 +7,7 @@ const path = require('path');
 
 describe('Check prediction AA: 4 (draw-base)', function () {
 	this.timeout(120000)
-
+	const { abs, sqrt, ceil, floor } = Math;
 	before(async () => {
 		this.network = await Network.create()
 			.with.agent({ predictionBaseAgent: path.join(__dirname, "../agent.oscript") })
@@ -53,19 +53,50 @@ describe('Check prediction AA: 4 (draw-base)', function () {
 		this.bob_no_amount = 0;
 		this.bob_draw_amount = 0;
 
+		this.allow_draw = true;
+		this.arb_profit_tax = 0.9;
+
+		this.network_fee = (this.reserve_asset == 'base' ? 10000 : 0);
+
 		this.buy = (amount_yes, amount_no, amount_draw, readOnly) => {
 			const BN = (num) => new Decimal(num);
-
-			const new_reserve = Math.ceil(this.coef * Math.sqrt((this.supply_yes + amount_yes) ** 2 + (this.supply_no + amount_no) ** 2 + (this.supply_draw + amount_draw) ** 2));
+			const new_reserve = ceil(this.coef * sqrt((this.supply_yes + amount_yes) ** 2 + (this.supply_no + amount_no) ** 2 + (this.supply_draw + amount_draw) ** 2));
 
 			const reserve_delta = new_reserve - this.reserve;
 			const reserve_needed = reserve_delta > 0 ? reserve_delta : 0;
 
-			const payout = reserve_delta < 0 ? Math.abs(reserve_delta) : 0;
+			const payout = reserve_delta < 0 ? abs(reserve_delta) : 0;
 
-			const fee = Math.ceil(reserve_needed * this.issue_fee + payout * this.redeem_fee);
+			let yes_arb_profit_tax = 0;
+			let no_arb_profit_tax = 0;
+			let draw_arb_profit_tax = 0;
 
-			// const next_coef = this.coef * ((new_reserve + fee) / new_reserve);
+			if (this.supply_yes + this.supply_no + this.supply_draw !== 0) {
+				const old_den = sqrt(this.supply_yes ** 2 + this.supply_no ** 2 + this.supply_draw ** 2);
+
+				const new_supply_yes = this.supply_yes + (amount_yes ? amount_yes : 0);
+				const new_supply_no = this.supply_no + (amount_no ? amount_no : 0);
+				const new_supply_draw = this.supply_draw + (amount_draw ? amount_draw : 0);
+
+				const old_yes_price = this.coef * (this.supply_yes / old_den);
+				const old_no_price = this.coef * (this.supply_no / old_den);
+				const old_draw_price = this.coef * (this.supply_draw / old_den);
+
+				const new_den = sqrt(new_supply_yes ** 2 + new_supply_no ** 2 + new_supply_draw ** 2);
+
+				const new_yes_price = this.coef * (new_supply_yes / new_den);
+				const new_no_price = this.coef * (new_supply_no / new_den);
+				const new_draw_price = this.coef * (new_supply_draw / new_den);
+
+				yes_arb_profit_tax = (abs((old_yes_price - new_yes_price) * amount_yes) / 2) * this.arb_profit_tax;
+				no_arb_profit_tax = (abs((old_no_price - new_no_price) * amount_no) / 2) * this.arb_profit_tax;
+				draw_arb_profit_tax = this.allow_draw ? (abs((old_draw_price - new_draw_price) * amount_draw) / 2) * this.arb_profit_tax : 0;
+			}
+
+			const total_arb_profit_tax = yes_arb_profit_tax + no_arb_profit_tax + draw_arb_profit_tax;
+
+			const fee = ceil(reserve_needed * this.issue_fee + payout * this.redeem_fee + total_arb_profit_tax);
+	
 			const bn_next_coef = BN(this.coef).mul((new_reserve + fee) / new_reserve).toNumber()
 
 			if (!readOnly) {
@@ -83,6 +114,61 @@ describe('Check prediction AA: 4 (draw-base)', function () {
 				payout
 			}
 		}
+
+		this.get_amount_by_type = (type, reserve_amount) => {
+			const fee = ceil(reserve_amount - this.network_fee - ((reserve_amount - this.network_fee) / (1 + this.issue_fee)));
+
+			const reserve = this.reserve + reserve_amount - fee - this.network_fee;
+			const ratio = reserve ** 2 / this.coef ** 2;
+
+			const supply_yes_squared = this.supply_yes ** 2;
+			const supply_no_squared = this.supply_no ** 2;
+			const supply_draw_squared = this.supply_draw ** 2;
+
+			let prepare_calc;
+
+			if (type == 'yes') {
+				prepare_calc = ratio - supply_no_squared - supply_draw_squared;
+			} else if (type == 'no') {
+				prepare_calc = ratio - supply_yes_squared - supply_draw_squared;
+			} else {
+				prepare_calc = ratio - supply_yes_squared - supply_no_squared;
+			}
+
+			const supply = type == 'yes' ? this.supply_yes : type == 'no' ? this.supply_no : this.supply_draw;
+			const amount = floor(sqrt(prepare_calc) - supply);
+
+			if ((this.supply_yes + this.supply_no + this.supply_draw) === 0) return amount;
+
+			const old_den = sqrt(supply_yes_squared + supply_no_squared + supply_draw_squared);
+
+			const old_price = this.coef * (supply / old_den);
+			const new_supply = supply + amount;
+
+			const new_supply_squared = new_supply ** 2;
+
+			const new_den = sqrt((type == 'yes' ? new_supply_squared : supply_yes_squared) + (type == 'no' ? new_supply_squared : supply_no_squared) + (type == 'draw' ? new_supply_squared : supply_draw_squared));
+			const new_price = this.coef * (new_supply / new_den);
+			const arb_profit_tax_amount = ((abs(old_price - new_price) * amount) / 2) * this.arb_profit_tax;
+
+			const fee_with_arb_profit_tax = ceil(reserve_amount - this.network_fee - ((reserve_amount - this.network_fee) / (1 + this.issue_fee))) + arb_profit_tax_amount;
+
+			const reserve_without_tax_and_fee = this.reserve + reserve_amount - fee_with_arb_profit_tax - this.network_fee;
+			const new_ratio = (reserve_without_tax_and_fee ** 2) / (this.coef ** 2);
+
+			let prepare_calc_2;
+
+			if (type == 'yes') {
+				prepare_calc_2 = new_ratio - supply_no_squared - supply_draw_squared;
+			} else if (type == 'no') {
+				prepare_calc_2 = new_ratio - supply_yes_squared - supply_draw_squared;
+			} else {
+				prepare_calc_2 = new_ratio - supply_yes_squared - supply_no_squared;
+			}
+
+			return floor(sqrt(prepare_calc_2) - supply);
+
+		}
 	});
 
 	it('Create prediction', async () => {
@@ -99,6 +185,7 @@ describe('Check prediction AA: 4 (draw-base)', function () {
 				end_of_trading_period: this.end_of_trading_period,
 				waiting_period_length: this.waiting_period_length,
 				reserve_asset: this.reserve_asset,
+				arb_profit_tax: this.arb_profit_tax,
 				issue_fee: this.issue_fee,
 				redeem_fee: this.redeem_fee
 			}
@@ -138,12 +225,13 @@ describe('Check prediction AA: 4 (draw-base)', function () {
 	});
 
 	it('Bob issues tokens by type (yes)', async () => {
-		const yes_amount = 2 * 1e7;
+		const amount = 3e9;
+		const yes_amount = this.get_amount_by_type('yes', amount);
+
 		const res = this.buy(yes_amount, 0, 0);
-		const amount = res.reserve_needed + res.fee;
 
 		const { unit, error } = await this.bob.sendMulti({
-			base_outputs: [{ address: this.prediction_address, amount: amount + 1e4 }],
+			base_outputs: [{ address: this.prediction_address, amount: amount }],
 			messages: [{
 				app: 'data',
 				payload: {
@@ -377,12 +465,14 @@ describe('Check prediction AA: 4 (draw-base)', function () {
 	});
 	
 	it('Bob issues tokens by type (no)', async () => {
-		const no_amount = 5 * 1e9;
+		const no_amount = this.get_amount_by_type('no', 5e9);
 		const res = this.buy(0, no_amount, 0);
-		const amount = res.reserve_needed + res.fee;
+
+		const amount = 5e9;
+		const change = amount - res.reserve_needed - res.fee - this.network_fee;
 
 		const { unit, error } = await this.bob.sendMulti({
-			base_outputs: [{ address: this.prediction_address, amount: amount + 1e4 }],
+			base_outputs: [{ address: this.prediction_address, amount: amount }],
 			messages: [{
 				app: 'data',
 				payload: {
@@ -412,6 +502,10 @@ describe('Check prediction AA: 4 (draw-base)', function () {
 				address: this.bobAddress,
 				asset: this.no_asset,
 				amount: no_amount,
+			},
+			{
+				address: this.bobAddress,
+				amount: change,
 			}
 		]);
 
