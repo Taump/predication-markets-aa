@@ -50,7 +50,7 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 		this.alice_draw_amount = 0;
 
 		this.allow_draw = true;
-		this.arb_profit_tax = 0.03;
+		this.arb_profit_tax = 0.8;
 
 		this.network_fee = (this.reserve_asset == 'base' ? 10000 : 0);
 
@@ -84,13 +84,9 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 				const new_no_price = this.coef * (new_supply_no / new_den);
 				const new_draw_price = this.coef * (new_supply_draw / new_den);
 
-				const reserve_for_yes_token = abs(amount_yes * ((old_yes_price + new_yes_price) / 2));
-				const reserve_for_no_token = abs(amount_no * ((old_no_price + new_no_price) / 2));
-				const reserve_for_draw_token = abs(amount_draw * ((old_draw_price + new_draw_price) / 2));
-
-				yes_arb_profit_tax = ((abs(old_yes_price - new_yes_price) * reserve_for_yes_token) / 2) * this.arb_profit_tax;
-				no_arb_profit_tax = ((abs(old_no_price - new_no_price) * reserve_for_no_token) / 2) * this.arb_profit_tax;
-				draw_arb_profit_tax = this.allow_draw ? ((abs(old_draw_price - new_draw_price) * reserve_for_draw_token) / 2) * this.arb_profit_tax : 0;
+				yes_arb_profit_tax = (abs((old_yes_price - new_yes_price) * amount_yes) / 2) * this.arb_profit_tax;
+				no_arb_profit_tax = (abs((old_no_price - new_no_price) * amount_no) / 2) * this.arb_profit_tax;
+				draw_arb_profit_tax = this.allow_draw ? (abs((old_draw_price - new_draw_price) * amount_draw) / 2) * this.arb_profit_tax : 0;
 			}
 
 			const total_arb_profit_tax = yes_arb_profit_tax + no_arb_profit_tax + draw_arb_profit_tax;
@@ -149,7 +145,7 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 
 			const new_den = sqrt((type == 'yes' ? new_supply_squared : supply_yes_squared) + (type == 'no' ? new_supply_squared : supply_no_squared) + (type == 'draw' ? new_supply_squared : supply_draw_squared));
 			const new_price = this.coef * (new_supply / new_den);
-			const arb_profit_tax_amount = ((abs(old_price - new_price) * reserve_amount) / 2) * this.arb_profit_tax;
+			const arb_profit_tax_amount = ((abs(old_price - new_price) * amount) / 2) * this.arb_profit_tax;
 
 			const fee_with_arb_profit_tax = ceil(reserve_amount - this.network_fee - ((reserve_amount - this.network_fee) / (1 + this.issue_fee))) + arb_profit_tax_amount;
 
@@ -184,7 +180,8 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 				datafeed_value: this.datafeed_value,
 				end_of_trading_period: this.end_of_trading_period,
 				waiting_period_length: this.waiting_period_length,
-				reserve_asset: this.reserve_asset
+				reserve_asset: this.reserve_asset,
+				arb_profit_tax: this.arb_profit_tax
 			}
 		});
 

@@ -2,7 +2,7 @@
   doc_url: "https://obyte.org/prediction-factory.json",
 	bounce_fees: { base: 20000 },
 	init: `{
-		$prediction_base_aa = 'MYY252QFLK6QGTI6QLOHBWHIKENCAENW';
+		$prediction_base_aa = 'ISTJMR6V7LZ5PWBDXZ242U6SMZSFDM3P';
 		$define_asset_forwarder = 'E4BAASPOCW6WHXSUOY2XEKXKA42RRD5I';
 	}`,
   messages: {
@@ -81,7 +81,7 @@
 					$redeem_fee = exists(trigger.data.redeem_fee) ? trigger.data.redeem_fee : 0.02;
 					require($redeem_fee >= 0 AND $redeem_fee < 1, "redeem_fee isn't valid");
 
-					$arb_profit_tax = exists(trigger.data.arb_profit_tax) ? trigger.data.arb_profit_tax : 0.03;
+					$arb_profit_tax = exists(trigger.data.arb_profit_tax) ? trigger.data.arb_profit_tax : 0.9;
 					require($arb_profit_tax >= 0 AND $arb_profit_tax < 1, "arb_profit_tax isn't valid");
 
 					$params = {

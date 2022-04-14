@@ -35,7 +35,7 @@
 			$coef = var['coef'] OTHERWISE 1;
 			$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
 			$redeem_fee = exists(params.redeem_fee) ? params.redeem_fee : 0.02;
-			$arb_profit_tax = exists(params.arb_profit_tax) ? params.arb_profit_tax : 0.03;
+			$arb_profit_tax = exists(params.arb_profit_tax) ? params.arb_profit_tax : 0.9;
 
 			$new_supply_yes = $supply_yes + ($yes_amount ? $yes_amount : 0);
 			$new_supply_no = $supply_no + ($no_amount ? $no_amount : 0);
@@ -67,13 +67,9 @@
 				$new_no_price = $coef * ($new_supply_no / $new_den);
 				$new_draw_price = $coef * ($new_supply_draw / $new_den);
 
-				$reserve_for_yes_token = abs($yes_amount * (($old_yes_price + $new_yes_price) / 2));
-				$reserve_for_no_token = abs($no_amount * (($old_no_price + $new_no_price) / 2));
-				$reserve_for_draw_token = abs($draw_amount * (($old_draw_price + $new_draw_price) / 2));
-
-				$yes_arb_profit_tax = ((abs($old_yes_price - $new_yes_price) * $reserve_for_yes_token) / 2) * $arb_profit_tax;
-				$no_arb_profit_tax = ((abs($old_no_price - $new_no_price) * $reserve_for_no_token) / 2) * $arb_profit_tax;
-				$draw_arb_profit_tax = $allow_draw ? ((abs($old_draw_price - $new_draw_price) * $reserve_for_draw_token) / 2) * $arb_profit_tax : 0;
+				$yes_arb_profit_tax = (abs(($old_yes_price - $new_yes_price) * $yes_amount) / 2) * $arb_profit_tax;
+				$no_arb_profit_tax = (abs(($old_no_price - $new_no_price) * $no_amount) / 2) * $arb_profit_tax;
+				$draw_arb_profit_tax = $allow_draw ? (abs(($old_draw_price - $new_draw_price) * $draw_amount) / 2) * $arb_profit_tax : 0;
 
 			} else {
 				$yes_arb_profit_tax = 0;
@@ -101,7 +97,7 @@
 		$get_token_amount = ($type, $reserve_amount) => {
 			$reserve_asset = params.reserve_asset OTHERWISE 'base';
 			$issue_fee = exists(params.issue_fee) ? params.issue_fee : 0.01;
-			$arb_profit_tax = exists(params.arb_profit_tax) ? params.arb_profit_tax : 0.03;
+			$arb_profit_tax = exists(params.arb_profit_tax) ? params.arb_profit_tax : 0.9;
 
 			require($type == 'yes' OR $type == 'no' OR $type == 'draw', "unknown type");
 			require(params.allow_draw OR $type != 'draw', "draw token does not exist");
@@ -144,7 +140,7 @@
 
 				$new_den = sqrt(($type == 'yes' ? $new_supply_squared : $supply_yes_squared) + ($type == 'no' ? $new_supply_squared : $supply_no_squared) + ($type == 'draw' ? $new_supply_squared : $supply_draw_squared));
 				$new_price = $coef * ($new_supply / $new_den);
-				$arb_profit_tax_amount = ((abs($old_price - $new_price) * $reserve_amount) / 2) * $arb_profit_tax;
+				$arb_profit_tax_amount = ((abs($old_price - $new_price) * $amount) / 2) * $arb_profit_tax;
 
 				$fee_with_arb_profit_tax = ceil($reserve_amount - $network_fee - (($reserve_amount - $network_fee) / (1 + $issue_fee))) + $arb_profit_tax_amount;
 
