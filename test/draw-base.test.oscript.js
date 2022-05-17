@@ -640,7 +640,7 @@ describe('Check prediction AA: 4 (draw-base)', function () {
 		this.supply_yes -= this.alice_yes_amount;
 
 		const { response } = await this.network.getAaResponseToUnitOnNode(this.alice, unit);
-		expect(response.response.responseVars['Your profit']).to.be.equal(expect_payout);
+		expect(response.response.responseVars['profit']).to.be.equal(expect_payout);
 		expect(response.bounced).to.be.false;
 
 		const { unitObj } = await this.bob.getUnitInfo({ unit: response.response_unit });

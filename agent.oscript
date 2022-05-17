@@ -90,7 +90,11 @@
 				payout: $payout,
 				fee: $fee,
 				arb_profit_tax: $total_arb_profit_tax,
-				next_coef: $next_coef
+				next_coef: $next_coef,
+				old_coef: $coef,
+				yes_price: $old_yes_price,
+				no_price: $old_no_price,
+				draw_price: $old_draw_price
 			}
 		};
 
@@ -112,8 +116,9 @@
 			$network_fee = ($reserve_asset == 'base' ? 10000 : 0);
 
 			$fee = ceil($reserve_amount - $network_fee - (($reserve_amount - $network_fee) / (1 + $issue_fee)));
-
-			$reserve = var['reserve'] + $reserve_amount - $fee - $network_fee;
+			
+			$old_reserve = var['reserve'];
+			$reserve = $old_reserve + $reserve_amount - $fee - $network_fee;
 
 			$ratio = $reserve^2/$coef^2;
 			
@@ -144,7 +149,7 @@
 
 				$fee_with_arb_profit_tax = ceil($reserve_amount - $network_fee - (($reserve_amount - $network_fee) / (1 + $issue_fee))) + $arb_profit_tax_amount;
 
-				$reserve_without_tax_and_fee = var['reserve'] + $reserve_amount - $fee_with_arb_profit_tax - $network_fee;
+				$reserve_without_tax_and_fee = $old_reserve + $reserve_amount - $fee_with_arb_profit_tax - $network_fee;
 				$new_ratio = $reserve_without_tax_and_fee^2/$coef^2;
 
 				if ($type == 'yes') {
@@ -402,10 +407,21 @@
 					{
 						app: 'state',
 						state: `{
+							response['next_reserve'] = $res.new_reserve  OTHERWISE 0;
+							response['old_reserve'] = $reserve OTHERWISE 0;
+							response['next_coef'] = $res.next_coef OTHERWISE 1;
+							response['old_coef'] = $res.old_coef OTHERWISE 1;
+
+							response['yes_amount'] = $yes_amount OTHERWISE 0;
+							response['no_amount'] = $no_amount OTHERWISE 0;
+							response['draw_amount'] = $draw_amount OTHERWISE 0;
+
+							response['yes_price'] = $res.yes_price OTHERWISE 0;
+							response['no_price'] = $res.no_price OTHERWISE 0;
+							response['draw_price'] = $res.draw_price OTHERWISE 0;
+
 							var['reserve'] = $res.new_reserve;
 							var['coef'] = $res.next_coef;
-
-							response['next_coef'] = $res.next_coef;
 
 							if ($payout > 0) {
 								response['payout'] = $payout;
@@ -418,10 +434,14 @@
 							response['arb_profit_tax'] = $res.arb_profit_tax;
 
 							var['supply_yes'] += $yes_amount;
+							response['supply_yes'] = var['supply_yes'] OTHERWISE 0;
+
 							var['supply_no'] += $no_amount;
+							response['supply_no'] = var['supply_no'] OTHERWISE 0;
 
 							if ($allow_draw) {
 								var['supply_draw'] += $draw_amount;
+								response['supply_draw'] = var['supply_draw'] OTHERWISE 0;
 							}
 						}`
 					},
@@ -511,7 +531,7 @@
 					{
 						app: 'state',
 						state: `{
-							response["Your profit"] = $payout;
+							response["profit"] = $payout;
 
 							if ($yes_amount > 0) {
 								var['supply_yes'] -= $yes_amount;
@@ -524,6 +544,8 @@
 							if ($allow_draw AND $draw_amount > 0) {
 								var['supply_draw'] -= $draw_amount;
 							}
+
+							var['reserve'] -= $payout;
 						}`
 					},
 				]
