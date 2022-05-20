@@ -92,9 +92,9 @@
 				arb_profit_tax: $total_arb_profit_tax,
 				next_coef: $next_coef,
 				old_coef: $coef,
-				yes_price: $old_yes_price,
-				no_price: $old_no_price,
-				draw_price: $old_draw_price
+				yes_price: $next_coef * ($new_supply_yes / $new_den),
+				no_price: $next_coef * ($new_supply_no / $new_den),
+				draw_price: $next_coef * ($new_supply_draw / $new_den),
 			}
 		};
 
@@ -334,8 +334,8 @@
 
 					$yes_amount = (!$type OR $type != 'yes') ? trigger.data.yes_amount OTHERWISE -trigger.output[[asset=$yes_asset]] : $get_token_amount('yes', $reserve_amount);
 					$no_amount = (!$type OR $type != 'no') ? trigger.data.no_amount OTHERWISE -trigger.output[[asset=$no_asset]] : $get_token_amount('no', $reserve_amount);
-					$draw_amount = $allow_draw ? ((!$type OR $type != 'draw') ? trigger.data.draw_amount OTHERWISE -trigger.output[[asset=$draw_asset]] : $get_token_amount('draw', $reserve_amount)) : 0;	
-					
+					$draw_amount = $allow_draw ? ((!$type OR $type != 'draw') ? trigger.data.draw_amount OTHERWISE -trigger.output[[asset=$draw_asset]] : $get_token_amount('draw', $reserve_amount)) : 0;
+
 					if (trigger.data.yes_amount AND (!is_integer(trigger.data.yes_amount) OR trigger.data.yes_amount <= 0))
 						bounce("invalid number of yes_amount");
 					if (trigger.data.no_amount AND (!is_integer(trigger.data.no_amount) OR trigger.data.no_amount <= 0))
