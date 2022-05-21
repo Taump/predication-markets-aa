@@ -53,6 +53,8 @@
 
 			require($payout <= $current_reserve, "too much redeem?");
 
+			$new_den = sqrt($new_supply_yes^2 + $new_supply_no^2 + $new_supply_draw^2);
+	
 			// calc arb profit fee
 			if (($supply_yes + $supply_no + $supply_draw) != 0) {
 				$old_den = sqrt($supply_yes^2 + $supply_no^2 + $supply_draw^2);
@@ -61,8 +63,6 @@
 				$old_no_price = $coef * ($supply_no / $old_den);
 				$old_draw_price = $coef * ($supply_draw / $old_den);
 
-				$new_den = sqrt($new_supply_yes^2 + $new_supply_no^2 + $new_supply_draw^2);
-
 				$new_yes_price = $coef * ($new_supply_yes / $new_den);
 				$new_no_price = $coef * ($new_supply_no / $new_den);
 				$new_draw_price = $coef * ($new_supply_draw / $new_den);
@@ -70,7 +70,6 @@
 				$yes_arb_profit_tax = (abs(($old_yes_price - $new_yes_price) * $yes_amount) / 2) * $arb_profit_tax;
 				$no_arb_profit_tax = (abs(($old_no_price - $new_no_price) * $no_amount) / 2) * $arb_profit_tax;
 				$draw_arb_profit_tax = $allow_draw ? (abs(($old_draw_price - $new_draw_price) * $draw_amount) / 2) * $arb_profit_tax : 0;
-
 			} else {
 				$yes_arb_profit_tax = 0;
 				$no_arb_profit_tax = 0;
