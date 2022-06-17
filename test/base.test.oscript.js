@@ -184,9 +184,9 @@ describe('Check prediction AA: 1 (base)', function () {
 			if (this.supply_yes + this.supply_no + this.supply_draw === 0) {
 				const draw_amount_ratio = 1 - yes_amount_ratio - no_amount_ratio;
 
-				yes_amount = Math.floor(Math.sqrt(reserve_amount_without_fee ** 2 * yes_amount_ratio));
-				no_amount = Math.floor(Math.sqrt(reserve_amount_without_fee ** 2 * no_amount_ratio));
-				draw_amount = this.allow_draw ? Math.floor(Math.sqrt(reserve_amount_without_fee ** 2 * draw_amount_ratio)) : 0;
+				yes_amount = Math.floor(reserve_amount_without_fee * Math.sqrt(yes_amount_ratio));
+				no_amount = Math.floor(reserve_amount_without_fee * Math.sqrt(no_amount_ratio));
+				draw_amount = this.allow_draw ? Math.floor(reserve_amount_without_fee * Math.sqrt(draw_amount_ratio)) : 0;
 			} else {
 				const ratio = (reserve_amount_without_fee + this.reserve) / this.reserve;
 

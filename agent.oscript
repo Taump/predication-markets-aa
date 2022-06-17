@@ -183,7 +183,7 @@
 						$error = "the trading period is closed";
 					}
 
-					if ($result) {
+					if (!$error AND $result) {
 						$error = "result already exists";
 					}
 				
@@ -231,13 +231,17 @@
 					if ($type) {
 						$amount = $type == 'yes' ? $yes_amount : ($type == 'no' ? $no_amount : $draw_amount);
 
-						if ($amount < $min_expected_amount) {
+						if (!$error AND ($amount < $min_expected_amount)) {
 							$error = "amount less than minimum";
 						}
 					}
 
 					if (!$error AND $res.reserve_needed > 0 AND ($res.reserve_needed + $res.fee + $network_fee > $reserve_amount)) {
 						$error = "expected reserve amount: " || ($res.reserve_needed + $res.fee + $network_fee);
+					}
+
+					if ($error) {
+						response['error'] = $error;
 					}
 				}`,
 				messages: [
@@ -282,41 +286,38 @@
 						}
 					},
 					{
+						if: "{!$error}",
 						app: 'state',
 						state: `{
-							if (!$error) {
-								response['next_reserve'] = $res.new_reserve  OTHERWISE 0;
-								response['next_coef'] = $res.next_coef OTHERWISE 1;
+							response['next_reserve'] = $res.new_reserve  OTHERWISE 0;
+							response['next_coef'] = $res.next_coef OTHERWISE 1;
 
-								response['yes_amount'] = $yes_amount OTHERWISE 0;
-								response['no_amount'] = $no_amount OTHERWISE 0;
-								response['draw_amount'] = $draw_amount OTHERWISE 0;
+							response['yes_amount'] = $yes_amount OTHERWISE 0;
+							response['no_amount'] = $no_amount OTHERWISE 0;
+							response['draw_amount'] = $draw_amount OTHERWISE 0;
 
-								response['yes_price'] = $res.yes_price;
-								response['no_price'] = $res.no_price;
-								response['draw_price'] = $res.draw_price;
+							response['yes_price'] = $res.yes_price;
+							response['no_price'] = $res.no_price;
+							response['draw_price'] = $res.draw_price;
 
-								var['reserve'] = $res.new_reserve;
-								var['coef'] = $res.next_coef;
+							var['reserve'] = $res.new_reserve;
+							var['coef'] = $res.next_coef;
 
-								if ($res.fee > 0){
-									response['fee'] = $res.fee;
-								}
+							if ($res.fee > 0){
+								response['fee'] = $res.fee;
+							}
 
-								response['arb_profit_tax'] = $res.arb_profit_tax;
+							response['arb_profit_tax'] = $res.arb_profit_tax;
 
-								var['supply_yes'] += $yes_amount;
-								response['supply_yes'] = var['supply_yes'] OTHERWISE 0;
+							var['supply_yes'] += $yes_amount;
+							response['supply_yes'] = var['supply_yes'] OTHERWISE 0;
 
-								var['supply_no'] += $no_amount;
-								response['supply_no'] = var['supply_no'] OTHERWISE 0;
+							var['supply_no'] += $no_amount;
+							response['supply_no'] = var['supply_no'] OTHERWISE 0;
 
-								if ($allow_draw) {
-									var['supply_draw'] += $draw_amount;
-									response['supply_draw'] = var['supply_draw'] OTHERWISE 0;
-								}
-							} else {
-								response['error'] = $error;
+							if ($allow_draw) {
+								var['supply_draw'] += $draw_amount;
+								response['supply_draw'] = var['supply_draw'] OTHERWISE 0;
 							}
 						}`
 					},
@@ -332,14 +333,26 @@
 
 						if ($supply_yes + $supply_no + $supply_draw == 0) {
 							$yes_amount_ratio = trigger.data.yes_amount_ratio OTHERWISE 0;
-							$no_amount_ratio = trigger.data.no_amount_ratio OTHERWISE 0;
-							$draw_amount_ratio = 1 - $yes_amount_ratio - $no_amount_ratio;
+							require($yes_amount_ratio >= 0, 'yes ratio isnt valid');
+
+							if ($allow_draw) {
+								$no_amount_ratio = trigger.data.no_amount_ratio OTHERWISE 0;
+								require($no_amount_ratio >= 0, 'no ratio isnt valid');
+
+								$draw_amount_ratio = 1 - $yes_amount_ratio - $no_amount_ratio;
+
+								require($draw_amount_ratio >= 0, 'ratio isnt valid');
+							} else {
+								$no_amount_ratio = 1 - $yes_amount_ratio;
+
+								require($no_amount_ratio >= 0, 'yes ratio isnt valid');
+							}
 
 							require($yes_amount_ratio >= 0 AND $no_amount_ratio >= 0 AND $yes_amount_ratio + $no_amount_ratio + $draw_amount_ratio == 1, 'yes_amount_ratio + no_amount_ratio + draw_amount_ratio must be equal 1');
 
-							$yes_amount = floor(sqrt($reserve_amount_without_fee * $reserve_amount_without_fee * $yes_amount_ratio));
-							$no_amount = floor(sqrt($reserve_amount_without_fee * $reserve_amount_without_fee * $no_amount_ratio));
-							$draw_amount = $allow_draw ? floor(sqrt($reserve_amount_without_fee * $reserve_amount_without_fee * $draw_amount_ratio)) : 0;
+							$yes_amount = floor($reserve_amount_without_fee * sqrt($yes_amount_ratio));
+							$no_amount = floor($reserve_amount_without_fee * sqrt($no_amount_ratio));
+							$draw_amount = $allow_draw ? floor($reserve_amount_without_fee * sqrt($draw_amount_ratio)) : 0;
 
 						} else {
 							$ratio = ($reserve_amount_without_fee + $reserve) / $reserve;
