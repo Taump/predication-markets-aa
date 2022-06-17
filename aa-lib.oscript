@@ -1,11 +1,11 @@
 {
 	getters: `{
-    $check_aa = ($aa) => {
-      require(is_aa($aa), "it's not aa");
-    };
+		$check_aa = ($aa) => {
+			require(is_aa($aa), "it's not aa");
+		};
 
-    $get_reserve = ($aa, $yes_amount, $no_amount, $draw_amount) => {
-      $check_aa($aa);
+		$get_reserve = ($aa, $yes_amount, $no_amount, $draw_amount) => {
+			$check_aa($aa);
 
 			$coef = var[$aa]['coef'] OTHERWISE 1;
 
@@ -14,9 +14,9 @@
 		};
 
 		$get_exchange_result = ($aa, $yes_amount, $no_amount, $draw_amount) => {
-      $check_aa($aa);
+			$check_aa($aa);
 
-      $params = definition[$aa][1].params;
+			$params = definition[$aa][1].params;
 			$supply_yes = var[$aa]['supply_yes'] OTHERWISE 0;
 			$supply_no = var[$aa]['supply_no'] OTHERWISE 0;
 			$supply_draw = var[$aa]['supply_draw'] OTHERWISE 0;
@@ -88,9 +88,9 @@
 			}
 		};
 
-    $get_token_amount = ($aa, $type, $reserve_amount) => {
-      $check_aa($aa);
-      $params = definition[$aa][1].params;
+		$get_token_amount = ($aa, $type, $reserve_amount) => {
+			$check_aa($aa);
+			$params = definition[$aa][1].params;
 
 			$reserve_asset = $params.reserve_asset OTHERWISE 'base';
 			$issue_fee = exists($params.issue_fee) ? $params.issue_fee : 0.01;

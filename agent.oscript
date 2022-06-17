@@ -11,7 +11,7 @@
 		};
 	}`,
 	init: `{
-		$lib_aa = "Q3BAIBLJKMXEUSPCLINOBDGPJKXZYK4H" || '';
+		$lib_aa = "ODKLBHNUOXRQGVG4WIV5GOCUONOAPTB7" || '';
 
 		// params
 		$event = params.event OTHERWISE '';
