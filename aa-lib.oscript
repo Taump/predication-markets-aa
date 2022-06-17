@@ -2,8 +2,6 @@
 	getters: `{
     $check_aa = ($aa) => {
       require(is_aa($aa), "it's not aa");
-      // $base_aa = definition[$aa][1].params;
-      // require($base_aa == "RWIDAEQUMM4KXTUMNYJJZUTFRQWUAITT", 'unknown base_aa');
     };
 
     $get_reserve = ($aa, $yes_amount, $no_amount, $draw_amount) => {
