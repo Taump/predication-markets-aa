@@ -14,6 +14,7 @@ describe('Check prediction AA: 3 (draw-asset)', function () {
 			.with.agent({ predictionBaseAgent: path.join(__dirname, "../agent.oscript") })
 			.with.agent({ predictionFactoryAgent: path.join(__dirname, "../factory.oscript") })
 			.with.agent({ forwarderAgent: path.join(__dirname, "../define-asset-forwarder.oscript") })
+			.with.agent({ aaLib: path.join(__dirname, "../aa-lib.oscript") })
 			.with.asset({ reserveAsset: {} })
 			.with.wallet({ alice: { base: 50e9, reserveAsset: 50e9 } })
 			.with.wallet({ bob: { base: 10e9, reserveAsset: 50e9 } })
