@@ -429,7 +429,7 @@
 
 							$new_reserve = $get_reserve($new_supply_yes, $new_supply_no, $new_supply_draw);
 
-							$next_coef = var['coef'] * (($new_reserve + $fee) / $new_reserve);
+							$next_coef = (var['coef'] OTHERWISE 1) * (($new_reserve + $fee) / $new_reserve);
 							
 							var['coef'] = $next_coef;
 
@@ -439,7 +439,7 @@
 							response['draw_amount'] = $draw_amount OTHERWISE 0;
 
 							response['next_reserve'] = var['reserve'];
-							response['next_coef'] = $next_coef OTHERWISE 1;
+							response['next_coef'] = $next_coef;
 							
 							$new_den = sqrt($new_supply_yes * $new_supply_yes + $new_supply_no * $new_supply_no + $new_supply_draw * $new_supply_draw);
 							
