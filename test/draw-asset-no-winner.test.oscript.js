@@ -11,13 +11,14 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 
 	before(async () => {
 		this.network = await Network.create()
+			.with.agent({ aaLib: path.join(__dirname, "../aa-lib.oscript") })
 			.with.agent({ predictionBaseAgent: path.join(__dirname, "../agent.oscript") })
 			.with.agent({ predictionFactoryAgent: path.join(__dirname, "../factory.oscript") })
 			.with.agent({ forwarderAgent: path.join(__dirname, "../define-asset-forwarder.oscript") })
 			.with.asset({ reserveAsset: {} })
-			.with.wallet({ alice: { base: 10e9, reserveAsset: 10e9 } })
-			.with.wallet({ bob: { base: 10e9, reserveAsset: 10e9 } })
-			.with.wallet({ oracleOperator: 10e9 })
+			.with.wallet({ alice: { base: 50e9, reserveAsset: 10e9 } })
+			.with.wallet({ bob: { base: 50e9, reserveAsset: 10e9 } })
+			.with.wallet({ oracleOperator: 50e9 })
 			.run();
 
 		this.reserve_asset = this.network.asset.reserveAsset;
@@ -164,6 +165,53 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 
 			return floor(sqrt(prepare_calc_2) - supply);
 
+		}
+
+		this.add_liquidity = (reserve_amount, data = {}, readOnly = false) => {
+			const fee = reserve_amount * this.issue_fee;
+
+			const reserve_amount_without_fee = reserve_amount - fee - this.network_fee;
+			const { yes_amount_ratio = 0, no_amount_ratio = 0 } = data;
+
+			let yes_amount;
+			let no_amount;
+			let draw_amount;
+
+			if (this.supply_yes + this.supply_no + this.supply_draw === 0) {
+				const draw_amount_ratio = 1 - yes_amount_ratio - no_amount_ratio;
+
+				yes_amount = Math.floor(reserve_amount_without_fee * Math.sqrt(yes_amount_ratio));
+				no_amount = Math.floor(reserve_amount_without_fee * Math.sqrt(no_amount_ratio));
+				draw_amount = this.allow_draw ? Math.floor(reserve_amount_without_fee * Math.sqrt(draw_amount_ratio)) : 0;
+
+			} else {
+				const ratio = (reserve_amount_without_fee + this.reserve) / this.reserve;
+
+				yes_amount = floor(ratio * this.supply_yes - this.supply_yes);
+				no_amount = floor(ratio * this.supply_no - this.supply_no);
+				draw_amount = floor(ratio * this.supply_draw - this.supply_draw);
+			}
+
+			if (!readOnly) {
+				this.reserve += reserve_amount;
+				this.supply_yes += yes_amount;
+				this.supply_no += no_amount;
+
+				if (this.allow_draw) {
+					this.supply_draw += draw_amount;
+				}
+
+				const new_reserve = Math.ceil(this.coef * Math.sqrt(this.supply_yes ** 2 + this.supply_no ** 2 + this.supply_draw ** 2));
+
+				const next_coef = this.coef * ((new_reserve + fee) / new_reserve);
+				this.coef = next_coef;
+			}
+
+			return {
+				yes_amount,
+				no_amount,
+				draw_amount
+			}
 		}
 	});
 
@@ -322,8 +370,17 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 
 		const { response } = await this.network.getAaResponseToUnitOnNode(this.alice, unit);
 
-		expect(response.bounced).to.be.true;
-		expect(response.response.error).to.equal(`expected reserve amount: ${Math.abs(res.reserve_needed + res.fee)}`);
+		const { unitObj } = await this.bob.getUnitInfo({ unit: response.response_unit });
+		expect(Utils.getExternalPayments(unitObj)).to.deep.equalInAnyOrder([
+			{
+				address: this.aliceAddress,
+				amount: amount,
+				asset: this.reserve_asset
+			},
+		]);
+		
+		expect(response.bounced).to.be.false;
+		expect(response.response.responseVars.error).to.equal(`expected reserve amount: ${Math.abs(res.reserve_needed + res.fee)}`);
 	});
 
 	it('Alice redeem yes tokens', async () => {
@@ -458,8 +515,8 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 
 		const { response } = await this.network.getAaResponseToUnitOnNode(this.bob, unit);
 
-		expect(response.bounced).to.be.true;
-		expect(response.response.error).to.equal("the trading period is closed");
+		expect(response.bounced).to.be.false;
+		expect(response.response.responseVars.error).to.equal("the trading period is closed");
 	});
 
 	it('Bob commit result (without data_value)', async () => {
@@ -503,7 +560,6 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 		expect(response.response.error).to.be.equal("no results yet");
 	});
 
-
 	it('Alice redeems her tokens', async () => {
 		const { error: errorTravel } = await this.network.timetravel({ shift: this.waiting_period_length * 1000 });
 		expect(errorTravel).to.be.null;
@@ -533,6 +589,65 @@ describe('Check prediction AA: 2 (draw-asset-no-winner)', function () {
 
 		const { vars } = await this.bob.readAAStateVars(this.prediction_address);
 		expect(vars.supply_yes).to.be.equal(this.supply_yes);
+	});
+
+	it('Bob add liquidity', async () => {
+		const amount = 3e9;
+
+		const { unit, error } = await this.bob.sendMulti({
+			asset: this.reserve_asset,
+			base_outputs: [{ address: this.prediction_address, amount: 1e4 }],
+			asset_outputs: [{ address: this.prediction_address, amount }],
+			messages: [{
+				app: 'data',
+				payload: {
+					add_liquidity: 1
+				}
+			}]
+		});
+
+		expect(error).to.be.null
+		expect(unit).to.be.validUnit
+
+		const { yes_amount, no_amount, draw_amount } = this.add_liquidity(amount);
+
+		const { response } = await this.network.getAaResponseToUnitOnNode(this.bob, unit);
+
+		await this.network.witnessUntilStable(response.response_unit);
+
+		expect(response.bounced).to.be.false;
+		const { vars: vars1 } = await this.bob.readAAStateVars(this.prediction_address);
+
+		expect(vars1.supply_yes).to.be.equal(this.supply_yes);
+		expect(vars1.supply_no).to.be.equal(this.supply_no);
+		expect(vars1.reserve).to.be.equal(this.reserve);
+		expect(Number(vars1.coef).toFixed(9)).to.be.equal(Number(this.coef).toFixed(9));
+
+		this.coef = vars1.coef;
+
+		const { unitObj } = await this.bob.getUnitInfo({ unit: response.response_unit })
+
+		expect(Utils.getExternalPayments(unitObj)).to.deep.equalInAnyOrder([
+			{
+				address: this.bobAddress,
+				asset: this.yes_asset,
+				amount: yes_amount,
+			},
+			{
+				address: this.bobAddress,
+				asset: this.no_asset,
+				amount: no_amount,
+			},
+			{
+				address: this.bobAddress,
+				asset: this.draw_asset,
+				amount: draw_amount,
+			}
+		]);
+
+		this.bob_no_amount += no_amount;
+		this.bob_yes_amount += yes_amount;
+		this.bob_draw_amount += draw_amount;
 	});
 
 	after(async () => {

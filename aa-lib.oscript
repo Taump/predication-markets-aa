@@ -1,0 +1,170 @@
+{
+	getters: `{
+		$check_aa = ($aa) => {
+			require(is_aa($aa), "it's not aa");
+		};
+
+		$get_reserve = ($aa, $yes_amount, $no_amount, $draw_amount) => {
+			$check_aa($aa);
+
+			$coef = var[$aa]['coef'] OTHERWISE 1;
+
+			$r = ceil($coef * sqrt($yes_amount * $yes_amount + $no_amount * $no_amount + $draw_amount * $draw_amount));
+			$r
+		};
+
+		$get_exchange_result = ($aa, $yes_amount, $no_amount, $draw_amount) => {
+			$check_aa($aa);
+
+			$params = definition[$aa][1].params;
+			$supply_yes = var[$aa]['supply_yes'] OTHERWISE 0;
+			$supply_no = var[$aa]['supply_no'] OTHERWISE 0;
+			$supply_draw = var[$aa]['supply_draw'] OTHERWISE 0;
+			$allow_draw = $params.allow_draw OTHERWISE false;
+			$current_reserve = var[$aa]['reserve'] OTHERWISE 0;
+			$coef = var[$aa]['coef'] OTHERWISE 1;
+
+			$issue_fee = exists($params.issue_fee) ? $params.issue_fee : 0.01;
+			$redeem_fee = exists($params.redeem_fee) ? $params.redeem_fee : 0.02;
+			$arb_profit_tax = exists($params.arb_profit_tax) ? $params.arb_profit_tax : 0.9;
+
+			$new_supply_yes = $supply_yes + ($yes_amount ? $yes_amount : 0);
+			$new_supply_no = $supply_no + ($no_amount ? $no_amount : 0);
+			$new_supply_draw = $supply_draw + ($draw_amount ? $draw_amount : 0);
+
+			$new_reserve = $get_reserve($aa, $new_supply_yes, $new_supply_no, $new_supply_draw);
+
+			$reserve_delta = $new_reserve - $current_reserve;
+
+			require($new_supply_yes >= 0 AND $new_supply_no >= 0 AND $new_supply_draw >= 0, "too much redeem?");
+			require($allow_draw OR $draw_amount == 0, "draw_asset isn't exist");
+
+			$reserve_needed = $reserve_delta > 0 ? $reserve_delta : 0;
+			$payout = $reserve_delta < 0 ? abs($reserve_delta) : 0;
+
+			require($payout <= $current_reserve, "too much redeem?");
+
+			$new_den = sqrt($new_supply_yes * $new_supply_yes + $new_supply_no * $new_supply_no + $new_supply_draw * $new_supply_draw);
+	
+			// calc arb profit fee
+			if (($supply_yes + $supply_no + $supply_draw) != 0) {
+				$old_den = sqrt($supply_yes*$supply_yes + $supply_no*$supply_no + $supply_draw*$supply_draw);
+
+				$old_yes_price = $coef * ($supply_yes / $old_den);
+				$old_no_price = $coef * ($supply_no / $old_den);
+				$old_draw_price = $coef * ($supply_draw / $old_den);
+
+				$new_yes_price = $coef * ($new_supply_yes / $new_den);
+				$new_no_price = $coef * ($new_supply_no / $new_den);
+				$new_draw_price = $coef * ($new_supply_draw / $new_den);
+
+				$yes_arb_profit_tax = (abs(($old_yes_price - $new_yes_price) * $yes_amount) / 2) * $arb_profit_tax;
+				$no_arb_profit_tax = (abs(($old_no_price - $new_no_price) * $no_amount) / 2) * $arb_profit_tax;
+				$draw_arb_profit_tax = $allow_draw ? (abs(($old_draw_price - $new_draw_price) * $draw_amount) / 2) * $arb_profit_tax : 0;
+			} else {
+				$yes_arb_profit_tax = 0;
+				$no_arb_profit_tax = 0;
+				$draw_arb_profit_tax = 0;
+			}
+
+			$total_arb_profit_tax = $yes_arb_profit_tax + $no_arb_profit_tax + $draw_arb_profit_tax;
+			require($yes_arb_profit_tax >= 0 AND $no_arb_profit_tax >= 0 AND $draw_arb_profit_tax >= 0, "negative arb profit tax");
+
+			$fee = ceil($reserve_needed * $issue_fee + $payout * $redeem_fee + $total_arb_profit_tax);
+
+			$next_coef = $coef * (($new_reserve + $fee) / $new_reserve);
+
+			{
+				reserve_needed: $reserve_needed,
+				new_reserve: $new_reserve + $fee,
+				payout: $payout,
+				fee: $fee,
+				arb_profit_tax: $total_arb_profit_tax,
+				next_coef: $next_coef,
+				old_coef: $coef,
+				yes_price: $next_coef * ($new_supply_yes / $new_den),
+				no_price: $next_coef * ($new_supply_no / $new_den),
+				draw_price: $next_coef * ($new_supply_draw / $new_den),
+			}
+		};
+
+		$get_token_amount = ($aa, $type, $reserve_amount) => {
+			$check_aa($aa);
+			$params = definition[$aa][1].params;
+
+			$reserve_asset = $params.reserve_asset OTHERWISE 'base';
+			$issue_fee = exists($params.issue_fee) ? $params.issue_fee : 0.01;
+			$arb_profit_tax = exists($params.arb_profit_tax) ? $params.arb_profit_tax : 0.9;
+
+			require($type == 'yes' OR $type == 'no' OR $type == 'draw', "unknown type");
+			require($params.allow_draw OR $type != 'draw', "draw token does not exist");
+			require($reserve_amount - ($reserve_asset == 'base' ? 10000 : 0) > 0, "negative amount");
+
+			$coef = var[$aa]['coef'] OTHERWISE 1;
+
+			$supply_yes = var[$aa]['supply_yes'] OTHERWISE 0;
+			$supply_no = var[$aa]['supply_no'] OTHERWISE 0;
+			$supply_draw = var[$aa]['supply_draw'] OTHERWISE 0;
+
+			$network_fee = ($reserve_asset == 'base' ? 10000 : 0);
+
+			$fee = ceil($reserve_amount - $network_fee - (($reserve_amount - $network_fee) / (1 + $issue_fee)));
+			
+			$old_reserve = var[$aa]['reserve'];
+			$reserve = $old_reserve + $reserve_amount - $fee - $network_fee;
+
+			$ratio = ($reserve * $reserve) / ($coef * $coef);
+			
+			$supply_yes_squared = $supply_yes * $supply_yes;
+			$supply_no_squared = $supply_no * $supply_no;
+			$supply_draw_squared = $supply_draw * $supply_draw;
+
+			if ($type == 'yes') {
+				$prepare_calc = $ratio - $supply_no_squared - $supply_draw_squared;
+			} else if ($type == 'no') {
+				$prepare_calc = $ratio - $supply_yes_squared - $supply_draw_squared;
+			} else {
+				$prepare_calc = $ratio - $supply_yes_squared - $supply_no_squared;
+			}
+
+			$supply = $type == 'yes' ? $supply_yes : $type == 'no' ? $supply_no : $supply_draw;
+			$amount = floor(sqrt($prepare_calc) - $supply);
+			
+			if (($supply_yes + $supply_no + $supply_draw) != 0) {
+				$old_den = sqrt($supply_yes_squared + $supply_no_squared + $supply_draw_squared);
+				$old_price = $coef * ($supply / $old_den);
+				$new_supply = $supply + $amount;
+				$new_supply_squared = $new_supply * $new_supply;
+
+				$new_den = sqrt(($type == 'yes' ? $new_supply_squared : $supply_yes_squared) + ($type == 'no' ? $new_supply_squared : $supply_no_squared) + ($type == 'draw' ? $new_supply_squared : $supply_draw_squared));
+				$new_price = $coef * ($new_supply / $new_den);
+				$arb_profit_tax_amount = ((abs($old_price - $new_price) * $amount) / 2) * $arb_profit_tax;
+
+				$fee_with_arb_profit_tax = ceil($reserve_amount - $network_fee - (($reserve_amount - $network_fee) / (1 + $issue_fee))) + $arb_profit_tax_amount;
+
+				$reserve_without_tax_and_fee = $old_reserve + $reserve_amount - $fee_with_arb_profit_tax - $network_fee;
+				$new_ratio = ($reserve_without_tax_and_fee * $reserve_without_tax_and_fee) / ($coef * $coef);
+
+				if ($type == 'yes') {
+					$prepare_calc_2 = $new_ratio - $supply_no_squared - $supply_draw_squared;
+				} else if ($type == 'no') {
+					$prepare_calc_2 = $new_ratio - $supply_yes_squared - $supply_draw_squared;
+				} else {
+					$prepare_calc_2 = $new_ratio - $supply_yes_squared - $supply_no_squared;
+				}
+
+				return floor(sqrt($prepare_calc_2) - $supply);
+
+			} else {
+				return $amount;
+			}
+		};
+
+	}`,
+	messages: [{
+		app: 'state',
+		state: `{
+			bounce("library only");
+		}`
+	}]
+}
