@@ -181,10 +181,14 @@
 
 					if (!(timestamp <= $end_of_trading_period OR timestamp >= $end_of_waiting_period)){
 						$error = "the trading period is closed";
+						response['error'] = $error;
+						return;
 					}
 
-					if (!$error AND $result) {
+					if ($result) {
 						$error = "result already exists";
+						response['error'] = $error;
+						return;
 					}
 				
 					if ($type) {
@@ -231,22 +235,22 @@
 					if ($type) {
 						$amount = $type == 'yes' ? $yes_amount : ($type == 'no' ? $no_amount : $draw_amount);
 
-						if (!$error AND ($amount < $min_expected_amount)) {
+						if ($amount < $min_expected_amount) {
 							$error = "amount less than minimum";
+							response['error'] = $error;
+							return;
 						}
 					}
 
-					if (!$error AND $res.reserve_needed > 0 AND ($res.reserve_needed + $res.fee + $network_fee > $reserve_amount)) {
+					if ($res.reserve_needed > 0 AND ($res.reserve_needed + $res.fee + $network_fee > $reserve_amount)) {
 						$error = "expected reserve amount: " || ($res.reserve_needed + $res.fee + $network_fee);
-					}
-
-					if ($error) {
 						response['error'] = $error;
+						return;
 					}
 				}`,
 				messages: [
 					{
-						if: "{$yes_amount > 0 AND !$error}",
+						if: "{$yes_amount AND $yes_amount > 0 AND !$error}",
 						app: 'payment',
 						payload: {
 							asset: `{$yes_asset}`,
@@ -256,7 +260,7 @@
 						}
 					},
 					{
-						if: "{$no_amount > 0 AND !$error}",
+						if: "{$no_amount AND $no_amount > 0 AND !$error}",
 						app: 'payment',
 						payload: {
 							asset: `{$no_asset}`,
@@ -266,7 +270,7 @@
 						}
 					},
 					{
-						if: "{$allow_draw AND $draw_amount > 0 AND !$error}",
+						if: "{$allow_draw AND $draw_amount AND $draw_amount > 0 AND !$error}",
 						app: 'payment',
 						payload: {
 							asset: `{$draw_asset}`,
@@ -276,7 +280,7 @@
 						}
 					},				
 					{ // return the change (if any) or pay out the redeemed reserve
-						if: "{$payout > 0 OR $error}",
+						if: "{($payout AND $payout > 0) OR $error}",
 						app: 'payment',
 						payload: {
 							asset: `{$reserve_asset}`,
