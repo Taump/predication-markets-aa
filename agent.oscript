@@ -444,6 +444,7 @@
 
 							response['next_reserve'] = var['reserve'];
 							response['next_coef'] = $next_coef;
+							response['fee'] = $fee;
 							
 							$new_den = sqrt($new_supply_yes * $new_supply_yes + $new_supply_no * $new_supply_no + $new_supply_draw * $new_supply_draw);
 							
