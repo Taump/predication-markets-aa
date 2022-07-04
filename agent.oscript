@@ -14,10 +14,7 @@
 		$lib_aa = "ODKLBHNUOXRQGVG4WIV5GOCUONOAPTB7" || '';
 
 		// params
-		$event = params.event OTHERWISE '';
-		require(length($event) >= 3 AND length($event) <= 128, "additional description cannot be over 128 chars");
-
-		$oracle = params.oracle; // for testnet
+		$oracle = params.oracle;
 		require($oracle AND is_valid_address($oracle), "oracle isn't valid");
 
 		$comparison = params.comparison OTHERWISE "==";

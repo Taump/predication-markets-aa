@@ -2,7 +2,7 @@
 	doc_url: "https://obyte.org/prediction-factory.json",
 	bounce_fees: { base: 20000 },
 	init: `{
-		$prediction_base_aa = 'TUKG5AKHM2OXLCBMWO5DNUNKAWQPW4CM';
+		$prediction_base_aa = 'XVLKOAOBIR5ZVQPK6RIDGEAUUVLHKXR3';
 		$define_asset_forwarder = 'E4BAASPOCW6WHXSUOY2XEKXKA42RRD5I';
 	}`,
 	messages: {
@@ -49,9 +49,6 @@
 			},
 			{
 				init: `{
-					$event = trigger.data.event OTHERWISE '';
-					require(length($event) >= 5 AND length($event) <= 128, "additional description cannot be over 128 chars");
-
 					$oracle = trigger.data.oracle;
 					require($oracle AND is_valid_address($oracle), "oracle isn't valid");
 
@@ -85,7 +82,6 @@
 					require($arb_profit_tax >= 0 AND $arb_profit_tax < 1, "arb_profit_tax isn't valid");
 
 					$params = {
-						event: $event,
 						oracle: $oracle,
 						comparison: $comparison,
 						feed_name: $feed_name,
