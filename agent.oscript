@@ -189,6 +189,9 @@
 					}
 				
 					if ($type) {
+
+						require(trigger.output[[asset=$reserve_asset]] > $network_fee, 'You sent no reserve');
+
 						$res = $lib_aa#11.$get_token_amount(this_address, $type, $reserve_amount);
 
 						if ($type == 'yes') {
