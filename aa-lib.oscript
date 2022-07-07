@@ -129,14 +129,15 @@
 
 			$supply = $type == 'yes' ? $supply_yes : $type == 'no' ? $supply_no : $supply_draw;
 			$amount = floor(sqrt($prepare_calc) - $supply);
-			
+			$new_supply = $supply + $amount;
+
+			$new_supply_squared = $new_supply * $new_supply;
+			$new_den = sqrt(($type == 'yes' ? $new_supply_squared : $supply_yes_squared) + ($type == 'no' ? $new_supply_squared : $supply_no_squared) + ($type == 'draw' ? $new_supply_squared : $supply_draw_squared));
+
 			if (($supply_yes + $supply_no + $supply_draw) != 0) {
 				$old_den = sqrt($supply_yes_squared + $supply_no_squared + $supply_draw_squared);
 				$old_price = $coef * ($supply / $old_den);
-				$new_supply = $supply + $amount;
-				$new_supply_squared = $new_supply * $new_supply;
 
-				$new_den = sqrt(($type == 'yes' ? $new_supply_squared : $supply_yes_squared) + ($type == 'no' ? $new_supply_squared : $supply_no_squared) + ($type == 'draw' ? $new_supply_squared : $supply_draw_squared));
 				$new_price = $coef * ($new_supply / $new_den);
 				$arb_profit_tax_amount = ((abs($old_price - $new_price) * $amount) / 2) * $arb_profit_tax;
 
@@ -153,10 +154,31 @@
 					$prepare_calc_2 = $new_ratio - $supply_yes_squared - $supply_no_squared;
 				}
 
-				return floor(sqrt($prepare_calc_2) - $supply);
+				$token_amount = floor(sqrt($prepare_calc_2) - $supply);
 
 			} else {
-				return $amount;
+				$token_amount = $amount;
+			}
+
+			// for stats
+			$next_coef = $coef * (($reserve + $fee) / $reserve);
+
+			$yes_price = $next_coef * (($type == 'yes' ? $supply : $supply_yes) / $new_den);
+			$no_price = $next_coef * (($type == 'no' ? $supply : $supply_no) / $new_den);
+			$draw_price = $params.allow_draw ? $next_coef * (($type == 'draw' ? $supply : $supply_draw) / $new_den) : 0;
+
+			{	
+				fee: $fee,
+				payout: 0,
+				old_coef: $coef,
+				reserve_needed: $reserve_amount - $fee - $network_fee,
+				new_reserve: $reserve + $fee,
+				arb_profit_tax: $arb_profit_tax_amount,
+				next_coef: $next_coef,
+				yes_price: $yes_price,
+				no_price: $no_price,
+				draw_price: $draw_price,
+				amount: $token_amount
 			}
 		};
 
