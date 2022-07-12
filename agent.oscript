@@ -11,7 +11,7 @@
 		};
 	}`,
 	init: `{
-		$lib_aa = "ODKLBHNUOXRQGVG4WIV5GOCUONOAPTB7" || '';
+		$lib_aa = "RKAJ5FAG6VFNET3GHTVMK6XUMG23VP6M" || '';
 
 		// params
 		$oracle = params.oracle;
@@ -189,43 +189,46 @@
 					}
 				
 					if ($type) {
-						$amount_by_type = $lib_aa#11.$get_token_amount(this_address, $type, $reserve_amount);
+
+						require(trigger.output[[asset=$reserve_asset]] > $network_fee, 'You sent no reserve');
+
+						$res = $lib_aa#11.$get_token_amount(this_address, $type, $reserve_amount);
 
 						if ($type == 'yes') {
-							$yes_amount = $amount_by_type;
+							$yes_amount = $res.amount;
 							$no_amount = 0;
 							$draw_amount = 0;
 						} else if ($type == 'no') { 
 							$yes_amount = 0;
-							$no_amount = $amount_by_type;
+							$no_amount = $res.amount;
 							$draw_amount = 0;
 						} else if ($type == 'no') { 
 							$yes_amount = 0;
 							$no_amount = 0;
-							$draw_amount = $amount_by_type;
+							$draw_amount = $res.amount;
 						}
 
 					} else {
 						$yes_amount = trigger.data.yes_amount OTHERWISE -trigger.output[[asset=$yes_asset]];
 						$no_amount = trigger.data.no_amount OTHERWISE -trigger.output[[asset=$no_asset]];
 						$draw_amount = $allow_draw ? trigger.data.draw_amount OTHERWISE -trigger.output[[asset=$draw_asset]] : 0;
+
+						if (trigger.data.yes_amount AND (!is_integer(trigger.data.yes_amount) OR trigger.data.yes_amount <= 0))
+							bounce("invalid number of yes_amount");
+						if (trigger.data.no_amount AND (!is_integer(trigger.data.no_amount) OR trigger.data.no_amount <= 0))
+							bounce("invalid number of no_amount");
+						if ($allow_draw AND trigger.data.draw_amount AND (!is_integer(trigger.data.draw_amount) OR trigger.data.draw_amount <= 0))
+							bounce("invalid number of draw_amount");
+
+						if (trigger.data.yes_amount AND trigger.output[[asset=$yes_asset]] > 0)
+							bounce("both yes_amount param and amount");
+						if (trigger.data.no_amount AND trigger.output[[asset=$no_asset]] > 0)
+							bounce("both no_amount param and amount");
+						if ($allow_draw AND trigger.data.draw_amount AND trigger.output[[asset=$draw_asset]] > 0)
+							bounce("both draw_amount param and amount");
+
+						$res = $lib_aa#12.$get_exchange_result(this_address, $yes_amount, $no_amount, $draw_amount);	
 					}
-
-					if (trigger.data.yes_amount AND (!is_integer(trigger.data.yes_amount) OR trigger.data.yes_amount <= 0))
-						bounce("invalid number of yes_amount");
-					if (trigger.data.no_amount AND (!is_integer(trigger.data.no_amount) OR trigger.data.no_amount <= 0))
-						bounce("invalid number of no_amount");
-					if ($allow_draw AND trigger.data.draw_amount AND (!is_integer(trigger.data.draw_amount) OR trigger.data.draw_amount <= 0))
-						bounce("invalid number of draw_amount");
-
-					if (trigger.data.yes_amount AND trigger.output[[asset=$yes_asset]] > 0)
-						bounce("both yes_amount param and amount");
-					if (trigger.data.no_amount AND trigger.output[[asset=$no_asset]] > 0)
-						bounce("both no_amount param and amount");
-					if ($allow_draw AND trigger.data.draw_amount AND trigger.output[[asset=$draw_asset]] > 0)
-						bounce("both draw_amount param and amount");	
-
-					$res = $lib_aa#12.$get_exchange_result(this_address, $yes_amount, $no_amount, $draw_amount);
 
 					$payout = floor($res.payout + $reserve_amount - $res.reserve_needed - $res.fee - $network_fee);
 

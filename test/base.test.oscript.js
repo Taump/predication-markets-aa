@@ -116,7 +116,7 @@ describe('Check prediction AA: 1 (base)', function () {
 			}
 		}
 
-		this.get_amount_by_type = (type, reserve_amount) => {
+		this.get_amount_by_type = (type, reserve_amount, readOnly = false) => {
 			const fee = ceil(reserve_amount - this.network_fee - ((reserve_amount - this.network_fee) / (1 + this.issue_fee)));
 
 			const reserve = this.reserve + reserve_amount - fee - this.network_fee;
@@ -139,7 +139,11 @@ describe('Check prediction AA: 1 (base)', function () {
 			const supply = type == 'yes' ? this.supply_yes : type == 'no' ? this.supply_no : this.supply_draw;
 			const amount = floor(sqrt(prepare_calc) - supply);
 
-			if ((this.supply_yes + this.supply_no + this.supply_draw) === 0) return amount;
+			let token_amount;
+
+			if ((this.supply_yes + this.supply_no + this.supply_draw) === 0) {
+				token_amount = amount;
+			};
 
 			const old_den = sqrt(supply_yes_squared + supply_no_squared + supply_draw_squared);
 
@@ -167,8 +171,39 @@ describe('Check prediction AA: 1 (base)', function () {
 				prepare_calc_2 = new_ratio - supply_yes_squared - supply_no_squared;
 			}
 
-			return floor(sqrt(prepare_calc_2) - supply);
+			if (!token_amount) {
+				token_amount = floor(sqrt(prepare_calc_2) - supply);
+			}
 
+
+			// for stats
+			const next_coef = this.coef * ((reserve + fee) / reserve);
+
+			const yes_price = next_coef * ((type == 'yes' ? supply : this.supply_yes) / new_den);
+			const no_price = next_coef * ((type == 'no' ? supply : this.supply_no) / new_den);
+			const draw_price = this.allow_draw ? next_coef * ((type == 'draw' ? supply : this.supply_draw) / new_den) : 0;
+
+			const res =  ({	
+				fee,
+				payout: 0,
+				old_coef: this.coef,
+				reserve_needed: reserve_amount - fee - this.network_fee,
+				new_reserve: reserve + fee,
+				arb_profit_tax: arb_profit_tax_amount,
+				next_coef: next_coef,
+				yes_price: yes_price,
+				no_price: no_price,
+				draw_price: draw_price,
+				amount: token_amount
+			});
+
+			if(!readOnly) {
+				this.reserve = reserve + fee;
+				this.coef = next_coef;
+				this.supply_yes += token_amount
+			}
+
+			return res;
 		}
 
 		this.add_liquidity = (reserve_amount, data = {}, readOnly = false) => {
@@ -302,8 +337,10 @@ describe('Check prediction AA: 1 (base)', function () {
 	});
 
 	it('Bob issues tokens by type (yes)', async () => {
-		const yes_amount = 2 * 1e7;
-		const res = this.buy(yes_amount, 0, 0);
+		const reserve_amount = 2e9;
+
+		const res = this.get_amount_by_type('yes', reserve_amount);
+
 		const amount = res.reserve_needed + res.fee;
 
 		const { unit, error } = await this.bob.sendMulti({
@@ -312,7 +349,7 @@ describe('Check prediction AA: 1 (base)', function () {
 				app: 'data',
 				payload: {
 					type: 'yes',
-					min_expected_amount: yes_amount
+					// min_expected_amount: yes_amount
 				}
 			}]
 		})
@@ -337,11 +374,11 @@ describe('Check prediction AA: 1 (base)', function () {
 			{
 				address: this.bobAddress,
 				asset: this.yes_asset,
-				amount: yes_amount,
+				amount: res.amount,
 			}
 		]);
 
-		this.bob_yes_amount += yes_amount;
+		this.bob_yes_amount += res.amount;
 	});
 
 	it('Bob issues tokens by type (less amount)', async () => {

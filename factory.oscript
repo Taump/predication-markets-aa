@@ -2,7 +2,7 @@
 	doc_url: "https://obyte.org/prediction-factory.json",
 	bounce_fees: { base: 20000 },
 	init: `{
-		$prediction_base_aa = 'XVLKOAOBIR5ZVQPK6RIDGEAUUVLHKXR3';
+		$prediction_base_aa = 'WRKKFOM5ECB73RSKO7GWSOO6VK5BVCKX';
 		$define_asset_forwarder = 'E4BAASPOCW6WHXSUOY2XEKXKA42RRD5I';
 	}`,
 	messages: {
